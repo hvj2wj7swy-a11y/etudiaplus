@@ -1,0 +1,94 @@
+.agenda-form input[type='date'] {
+  background: #f7f9fc;
+}
+
+.agenda-event-description {
+  font-size: 0.74rem;
+  line-height: 1.1;
+  color: #475569;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.agenda-event-card--interactive {
+  cursor: pointer;
+}
+
+.agenda-event-card--interactive:focus-visible {
+  outline: 2px solid #0d6efd;
+  outline-offset: 2px;
+}
+
+.agenda-event-details p {
+  color: #1f2937;
+}
+
+@media (max-width: 991.98px) {
+  .agenda-page-shell .agenda-main-heading {
+    font-size: 1.6rem;
+  }
+
+  .agenda-page-shell .agenda-toolbar-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .agenda-page-shell .agenda-toolbar-nav,
+  .agenda-page-shell .agenda-toolbar-toggle {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  .agenda-page-shell .agenda-toolbar-nav .btn,
+  .agenda-page-shell .agenda-toolbar-toggle .btn {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+
+  .agenda-page-shell .agenda-week-grid {
+    overflow-x: auto;
+    border-radius: 1rem;
+  }
+
+  .agenda-page-shell .agenda-week-body {
+    min-width: 780px;
+  }
+
+  .agenda-page-shell .agenda-month-grid {
+    overflow-x: auto;
+  }
+
+  .agenda-page-shell .agenda-month-header-row,
+  .agenda-page-shell .agenda-month-body {
+    min-width: 760px;
+  }
+
+  .agenda-page-shell .agenda-month-details-card .d-flex {
+    flex-direction: column;
+    align-items: stretch !important;
+  }
+
+  .agenda-page-shell .agenda-month-details-card .btn {
+    width: 100%;
+  }
+}
+
+@media (max-width: 575.98px) {
+  .agenda-page-shell .agenda-main-heading {
+    font-size: 1.35rem;
+  }
+
+  .agenda-page-shell .agenda-upcoming-item {
+    align-items: flex-start;
+  }
+
+  .agenda-page-shell .agenda-form .row > [class*='col-'] {
+    width: 100%;
+  }
+
+  .agenda-page-shell .agenda-toolbar-title {
+    white-space: normal;
+  }
+}

@@ -18,13 +18,14 @@ const LEVELS = [
 const splitFullName = (fullName) => {
   const cleaned = String(fullName || '').trim().replace(/\s+/g, ' ')
   if (!cleaned) {
-    return { firstName: 'Etudiant', lastName: 'Edudia' }
+  return { firstName: '', lastName: '' }
+}
   }
 
   const [firstName, ...rest] = cleaned.split(' ')
   return {
     firstName,
-    lastName: rest.join(' ') || 'Edudia'
+    lastName: rest.join(' ')
   }
 }
 

@@ -20,14 +20,14 @@ const splitFullName = (fullName) => {
   if (!cleaned) {
   return { firstName: '', lastName: '' }
 }
-  }
 
   const [firstName, ...rest] = cleaned.split(' ')
-  return {
-    firstName,
-    lastName: rest.join(' ')
-  }
+return {
+  firstName,
+  lastName: rest.join(' ')
 }
+}
+
 
 const getLevelFromPoints = (points) => {
   return LEVELS.find((level) => points >= level.min && points <= level.max) || LEVELS[0]

@@ -553,7 +553,7 @@ main { min-height: calc(100vh - 170px); }
 }
 
 .notes-editor-toolbar {
-  overflow-x: auto;
+  overflow: visible;
 }
 
 .notes-editor-topbar__left,
@@ -1613,6 +1613,7 @@ textarea.form-control::placeholder {
 }
 
 .notes-editor-toolbar__group--tools {
+  position: relative;
   flex: 1 1 360px;
   justify-content: center;
 }
@@ -2121,7 +2122,7 @@ textarea.form-control::placeholder {
 
 .notes-tool-panel {
   position: absolute;
-  top: calc(100% + 0.5rem);
+  top: 100%;
   left: 50%;
   transform: translateX(-50%);
   width: min(92vw, 520px);
@@ -2133,6 +2134,7 @@ textarea.form-control::placeholder {
   background: rgba(255, 255, 255, 0.98);
   box-shadow: 0 16px 40px rgba(17, 24, 39, 0.12);
   animation: notesPanelIn 0.16s ease;
+  z-index: 2000;
 }
 
 @keyframes notesPanelIn {

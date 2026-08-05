@@ -22,7 +22,8 @@ import {
   FileDown,
   PanelsTopLeft,
   Minus,
-  Check
+  Check,
+  MousePointer2
 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext.jsx'
 import NotebookPreview from '../components/NotebookPreview.jsx'
@@ -45,6 +46,7 @@ const PAPER_HEIGHT = 1200
 const DEFAULT_TEXT_FONT = "'Segoe UI', system-ui, -apple-system, sans-serif"
 const COLOR_PRESETS = ['#111827', '#1f2937', '#4b5563', '#6b7280', '#2563eb', '#0ea5e9', '#10b981', '#f97316', '#ef4444']
 const TOOL_OPTIONS = [
+  { id: 'select', label: 'Sélection' },
   { id: 'pen', label: 'Stylo' },
   { id: 'highlighter', label: 'Surligneur' },
   { id: 'eraser', label: 'Gomme' },
@@ -94,13 +96,13 @@ const getElementBounds = (element) => {
   }
 
   if (element.type === 'text' || element.type === 'image') {
-    return {
-      x: element.x,
-      y: element.y,
-      width: element.width || 120,
-      height: element.height || 48
-    }
+  return {
+    x: element.x,
+    y: element.y,
+    width: element.maxWidth || element.width || 120,
+    height: element.minHeight || element.height || 48
   }
+}
 
   if (element.type === 'shape') {
     return normalizeShapeBounds(element)
@@ -161,11 +163,19 @@ export default function NotebookEditor() {
   const [strokeWidth, setStrokeWidth] = useState(4)
   const [zoom, setZoom] = useState(1)
   const [draftElement, setDraftElement] = useState(null)
+  const [selectedElementId, setSelectedElementId] = useState(null)
+  const [selectedElementIds, setSelectedElementIds] = useState([])
+  const [selectionBox, setSelectionBox] = useState(null)
   const [editingText, setEditingText] = useState(null)
   const [textFontSize, setTextFontSize] = useState(20)
   const [textFontFamily, setTextFontFamily] = useState(DEFAULT_TEXT_FONT)
   const [textAlign, setTextAlign] = useState('left')
   const [textMaxWidth, setTextMaxWidth] = useState(320)
+  const [textFontWeight, setTextFontWeight] = useState('normal')
+const [textFontStyle, setTextFontStyle] = useState('normal')
+const [textTextDecoration, setTextTextDecoration] = useState('none')
+const [textOpacity, setTextOpacity] = useState(1)
+const [textLineHeight, setTextLineHeight] = useState(1.4)
   const [showToolPanel, setShowToolPanel] = useState(false)
   const [showExtrasMenu, setShowExtrasMenu] = useState(false)
   const [showSettingsPanel, setShowSettingsPanel] = useState(false)
@@ -177,6 +187,9 @@ export default function NotebookEditor() {
   const fileInputRef = useRef(null)
   const pdfImportInputRef = useRef(null)
   const surfaceRef = useRef(null)
+  const dragElementRef = useRef(null)
+  const selectionStartRef = useRef(null)
+  const resizeElementRef = useRef(null)
   const textEditorRef = useRef(null)
   const toolPanelRef = useRef(null)
   const toolbarToolsRef = useRef(null)
@@ -185,6 +198,7 @@ export default function NotebookEditor() {
   const settingsPanelRef = useRef(null)
   const settingsButtonRef = useRef(null)
   const historyRef = useRef({ past: [], future: [] })
+  const clipboardRef = useRef(null)
   const autosaveTimerRef = useRef(null)
   const pointerModeRef = useRef(null)
   const fallbackCourse = user?.programme || 'General'
@@ -221,6 +235,44 @@ export default function NotebookEditor() {
   const currentPageIndex = useMemo(() => {
     return notebook?.pages?.findIndex((page) => page.id === selectedPageId) ?? -1
   }, [notebook?.pages, selectedPageId])
+
+  const selectedElement = useMemo(() => {
+  if (!currentPage || !selectedElementId) return null
+
+  return (
+    currentPage.elements.find(
+      (element) => element.id === selectedElementId
+    ) || null
+  )
+}, [currentPage, selectedElementId])
+
+const selectedElementBounds = useMemo(() => {
+  if (!currentPage) return null
+
+  const selectedElements =
+    selectedElementIds.length > 0
+      ? currentPage.elements.filter((element) =>
+          selectedElementIds.includes(element.id)
+        )
+      : selectedElement
+        ? [selectedElement]
+        : []
+
+  if (selectedElements.length === 0) return null
+
+  const bounds = selectedElements.map(getElementBounds)
+
+  return {
+    x: Math.min(...bounds.map((b) => b.x)),
+    y: Math.min(...bounds.map((b) => b.y)),
+    width:
+      Math.max(...bounds.map((b) => b.x + b.width)) -
+      Math.min(...bounds.map((b) => b.x)),
+    height:
+      Math.max(...bounds.map((b) => b.y + b.height)) -
+      Math.min(...bounds.map((b) => b.y))
+  }
+}, [currentPage, selectedElement, selectedElementIds])
 
   const commitNotebookMutation = (mutator) => {
     setNotebook((previous) => {
@@ -294,11 +346,22 @@ export default function NotebookEditor() {
     const nextFontFamily = source.fontFamily || textFontFamily || DEFAULT_TEXT_FONT
     const nextAlign = source.align || textAlign || 'left'
     const nextMaxWidth = Number(source.maxWidth || source.width || textMaxWidth || 320)
+    const nextFontWeight = source.fontWeight || textFontWeight || 'normal'
+const nextFontStyle = source.fontStyle || textFontStyle || 'normal'
+const nextTextDecoration =
+  source.textDecoration || textTextDecoration || 'none'
+const nextOpacity = Number(source.opacity ?? textOpacity ?? 1)
+const nextLineHeight = Number(source.lineHeight || textLineHeight || 1.4)
 
     setTextFontSize(nextFontSize)
     setTextFontFamily(nextFontFamily)
     setTextAlign(nextAlign)
     setTextMaxWidth(nextMaxWidth)
+    setTextFontWeight(nextFontWeight)
+setTextFontStyle(nextFontStyle)
+setTextTextDecoration(nextTextDecoration)
+setTextOpacity(nextOpacity)
+setTextLineHeight(nextLineHeight)
 
     setEditingText({
       sessionId: `text_session_${Date.now()}`,
@@ -307,10 +370,15 @@ export default function NotebookEditor() {
       y: Number(source.y ?? point.y),
       text: String(source.text || ''),
       fontSize: nextFontSize,
-      fontFamily: nextFontFamily,
-      color: source.color || color,
-      align: nextAlign,
-      maxWidth: nextMaxWidth,
+fontFamily: nextFontFamily,
+fontWeight: nextFontWeight,
+fontStyle: nextFontStyle,
+textDecoration: nextTextDecoration,
+opacity: nextOpacity,
+lineHeight: nextLineHeight,
+color: source.color || color,
+align: nextAlign,
+maxWidth: nextMaxWidth,
       width: nextMaxWidth,
       minHeight: Number(source.minHeight || 96)
     })
@@ -325,9 +393,395 @@ export default function NotebookEditor() {
     })
   }
 
+const moveElementBy = (element, deltaX, deltaY) => {
+  if (element.type === 'stroke') {
+    return {
+      ...element,
+      points: element.points.map((point) => ({
+        ...point,
+        x: point.x + deltaX,
+        y: point.y + deltaY
+      }))
+    }
+  }
+
+  if (element.type === 'shape' && element.shape === 'line') {
+    return {
+      ...element,
+      x: element.x + deltaX,
+      y: element.y + deltaY,
+      x2: element.x2 + deltaX,
+      y2: element.y2 + deltaY
+    }
+  }
+
+  return {
+    ...element,
+    x: element.x + deltaX,
+    y: element.y + deltaY
+  }
+}
+
+const moveSelectedElement = (elementId, deltaX, deltaY) => {
+  setNotebook((previous) => {
+    if (!previous) return previous
+
+    const nextNotebook = cloneNotebook(previous)
+
+    nextNotebook.pages = nextNotebook.pages.map((page) => {
+      if (page.id !== selectedPageId) return page
+
+      return {
+        ...page,
+        updatedAt: new Date().toISOString(),
+        elements: page.elements.map((element) => {
+  const shouldMove =
+    selectedElementIds.length > 0
+      ? selectedElementIds.includes(element.id)
+      : element.id === elementId
+
+  return shouldMove
+    ? moveElementBy(element, deltaX, deltaY)
+    : element
+})
+      }
+    })
+
+    return refreshNotebookPreview(nextNotebook)
+  })
+}
+
+const resizeElementFromBounds = (
+  element,
+  originalBounds,
+  nextWidth,
+  nextHeight
+) => {
+  const safeWidth = Math.max(30, nextWidth)
+  const safeHeight = Math.max(30, nextHeight)
+
+  const scaleX =
+    originalBounds.width > 0
+      ? safeWidth / originalBounds.width
+      : 1
+
+  const scaleY =
+    originalBounds.height > 0
+      ? safeHeight / originalBounds.height
+      : 1
+
+  if (element.type === 'stroke') {
+    return {
+      ...element,
+      points: element.points.map((point) => ({
+        ...point,
+        x:
+          originalBounds.x +
+          (point.x - originalBounds.x) * scaleX,
+        y:
+          originalBounds.y +
+          (point.y - originalBounds.y) * scaleY
+      }))
+    }
+  }
+
+  if (element.type === 'shape' && element.shape === 'line') {
+    return {
+      ...element,
+      x:
+        originalBounds.x +
+        (element.x - originalBounds.x) * scaleX,
+      y:
+        originalBounds.y +
+        (element.y - originalBounds.y) * scaleY,
+      x2:
+        originalBounds.x +
+        (element.x2 - originalBounds.x) * scaleX,
+      y2:
+        originalBounds.y +
+        (element.y2 - originalBounds.y) * scaleY
+    }
+  }
+
+  if (element.type === 'shape') {
+    return {
+      ...element,
+      x: originalBounds.x,
+      y: originalBounds.y,
+      width: safeWidth,
+      height: safeHeight
+    }
+  }
+
+  if (element.type === 'text') {
+    return {
+      ...element,
+      width: safeWidth,
+      maxWidth: safeWidth,
+      height: safeHeight,
+      minHeight: safeHeight
+    }
+  }
+
+  if (element.type === 'image') {
+    return {
+      ...element,
+      width: safeWidth,
+      height: safeHeight
+    }
+  }
+
+  return element
+}
+
+const resizeElementFromGroupBounds = (
+  element,
+  groupBounds,
+  scaleX,
+  scaleY
+) => {
+  const scalePoint = (x, y) => ({
+    x: groupBounds.x + (x - groupBounds.x) * scaleX,
+    y: groupBounds.y + (y - groupBounds.y) * scaleY
+  })
+
+  if (element.type === 'stroke') {
+    return {
+      ...element,
+      points: element.points.map((point) => ({
+        ...point,
+        ...scalePoint(point.x, point.y)
+      }))
+    }
+  }
+
+  if (element.type === 'shape' && element.shape === 'line') {
+    const start = scalePoint(element.x, element.y)
+    const end = scalePoint(element.x2, element.y2)
+
+    return {
+      ...element,
+      x: start.x,
+      y: start.y,
+      x2: end.x,
+      y2: end.y
+    }
+  }
+
+  const position = scalePoint(element.x, element.y)
+
+  if (element.type === 'shape') {
+    return {
+      ...element,
+      x: position.x,
+      y: position.y,
+      width: element.width * scaleX,
+      height: element.height * scaleY
+    }
+  }
+
+  if (element.type === 'text') {
+    return {
+      ...element,
+      x: position.x,
+      y: position.y,
+      width: (element.width || element.maxWidth || 120) * scaleX,
+      maxWidth: (element.maxWidth || element.width || 120) * scaleX,
+      height: (element.height || element.minHeight || 48) * scaleY,
+      minHeight: (element.minHeight || element.height || 48) * scaleY,
+      fontSize: Math.max(
+        8,
+        (element.fontSize || 20) * Math.min(scaleX, scaleY)
+      )
+    }
+  }
+
+  if (element.type === 'image') {
+    return {
+      ...element,
+      x: position.x,
+      y: position.y,
+      width: element.width * scaleX,
+      height: element.height * scaleY
+    }
+  }
+
+  return element
+}
+
+const resizeSelectedElement = (
+  elementId,
+  originalElement,
+  originalBounds,
+  nextWidth,
+  nextHeight
+) => {
+  setNotebook((previous) => {
+    if (!previous) return previous
+
+    const nextNotebook = cloneNotebook(previous)
+
+    nextNotebook.pages = nextNotebook.pages.map((page) => {
+      if (page.id !== selectedPageId) return page
+
+      return {
+        ...page,
+        updatedAt: new Date().toISOString(),
+        elements: page.elements.map((element) =>
+          element.id === elementId
+            ? resizeElementFromBounds(
+                originalElement,
+                originalBounds,
+                nextWidth,
+                nextHeight
+              )
+            : element
+        )
+      }
+    })
+
+    return refreshNotebookPreview(nextNotebook)
+  })
+}
+
+const handleResizePointerDown = (event) => {
+  event.preventDefault()
+  event.stopPropagation()
+
+  if (!notebook || !currentPage || !selectedElementBounds) return
+
+  historyRef.current.past.push(cloneNotebook(notebook))
+
+  if (historyRef.current.past.length > 40) {
+    historyRef.current.past.shift()
+  }
+
+  historyRef.current.future = []
+  pointerModeRef.current = 'resize'
+  
+  const idsToResize =
+  selectedElementIds.length > 0
+    ? selectedElementIds
+    : selectedElementId
+      ? [selectedElementId]
+      : []
+
+const originalElements = currentPage.elements
+  .filter((element) => idsToResize.includes(element.id))
+  .map((element) => cloneNotebook(element))
+
+  resizeElementRef.current = {
+  elementId: selectedElement?.id || null,
+  originalElement: selectedElement
+    ? cloneNotebook(selectedElement)
+    : null,
+  originalBounds: { ...selectedElementBounds },
+
+  elementIds: idsToResize,
+  originalElements
+}
+
+  event.currentTarget.setPointerCapture(event.pointerId)
+}
+
   const handlePointerDown = (event) => {
-    if (!currentPage || editingText) return
-    const point = getSurfacePoint(event)
+  if (!currentPage || editingText) return
+
+  const point = getSurfacePoint(event)
+  
+  if (
+  activeTool === 'select' &&
+  event.target?.dataset?.resizeHandle === 'true' &&
+  selectedElement &&
+  selectedElementBounds
+) {
+  event.stopPropagation()
+
+  historyRef.current.past.push(cloneNotebook(notebook))
+
+  if (historyRef.current.past.length > 40) {
+    historyRef.current.past.shift()
+  }
+
+  historyRef.current.future = []
+
+  pointerModeRef.current = 'resize'
+
+  resizeElementRef.current = {
+    elementId: selectedElement.id,
+    originalElement: cloneNotebook(selectedElement),
+    originalBounds: { ...selectedElementBounds }
+  }
+
+  surfaceRef.current?.setPointerCapture?.(event.pointerId)
+  return
+}
+
+  if (activeTool === 'select') {
+    const selectedElement = [...currentPage.elements]
+      .reverse()
+      .find((element) =>
+        pointInBounds(point, getElementBounds(element))
+      )
+
+    if (!selectedElement) {
+  setSelectedElementId(null)
+  setSelectedElementIds([])
+  dragElementRef.current = null
+
+  pointerModeRef.current = 'selection-box'
+  selectionStartRef.current = point
+
+  setSelectionBox({
+    x: point.x,
+    y: point.y,
+    width: 0,
+    height: 0
+  })
+
+  surfaceRef.current?.setPointerCapture?.(event.pointerId)
+  return
+}
+
+    historyRef.current.past.push(cloneNotebook(notebook))
+
+    if (historyRef.current.past.length > 40) {
+      historyRef.current.past.shift()
+    }
+
+    historyRef.current.future = []
+
+    if (event.shiftKey) {
+  setSelectedElementIds((currentIds) =>
+    currentIds.includes(selectedElement.id)
+      ? currentIds.filter((id) => id !== selectedElement.id)
+      : [...currentIds, selectedElement.id]
+  )
+
+  setSelectedElementId(selectedElement.id)
+} else {
+  const groupIds = selectedElement.groupId
+    ? currentPage.elements
+        .filter(
+          (element) => element.groupId === selectedElement.groupId
+        )
+        .map((element) => element.id)
+    : [selectedElement.id]
+
+  setSelectedElementIds(groupIds)
+  setSelectedElementId(selectedElement.id)
+}
+
+    pointerModeRef.current = 'move'
+
+    dragElementRef.current = {
+      elementId: selectedElement.id,
+      lastPoint: point
+    }
+
+    surfaceRef.current?.setPointerCapture?.(event.pointerId)
+    return
+  }
 
     if (activeTool === 'eraser') {
       surfaceRef.current?.setPointerCapture?.(event.pointerId)
@@ -367,6 +821,100 @@ export default function NotebookEditor() {
   const handlePointerMove = (event) => {
     const point = getSurfacePoint(event)
 
+    if (
+  pointerModeRef.current === 'selection-box' &&
+  selectionStartRef.current
+) {
+  const startPoint = selectionStartRef.current
+
+  setSelectionBox({
+    x: Math.min(startPoint.x, point.x),
+    y: Math.min(startPoint.y, point.y),
+    width: Math.abs(point.x - startPoint.x),
+    height: Math.abs(point.y - startPoint.y)
+  })
+
+  return
+}
+
+if (
+  pointerModeRef.current === 'resize' &&
+  resizeElementRef.current
+) {
+  const {
+  elementId,
+  originalElement,
+  originalBounds,
+  elementIds,
+  originalElements
+} = resizeElementRef.current
+
+  const nextWidth = Math.max(30, point.x - originalBounds.x)
+const nextHeight = Math.max(30, point.y - originalBounds.y)
+
+const scaleX =
+  originalBounds.width > 0
+    ? nextWidth / originalBounds.width
+    : 1
+
+const scaleY =
+  originalBounds.height > 0
+    ? nextHeight / originalBounds.height
+    : 1
+
+setNotebook((previous) => {
+  if (!previous) return previous
+
+  const originalElementsById = new Map(
+    originalElements.map((element) => [element.id, element])
+  )
+
+  const nextNotebook = cloneNotebook(previous)
+
+  nextNotebook.pages = nextNotebook.pages.map((page) => {
+    if (page.id !== selectedPageId) return page
+
+    return {
+      ...page,
+      updatedAt: new Date().toISOString(),
+      elements: page.elements.map((element) => {
+        const originalElementForResize =
+          originalElementsById.get(element.id)
+
+        return originalElementForResize
+          ? resizeElementFromGroupBounds(
+              originalElementForResize,
+              originalBounds,
+              scaleX,
+              scaleY
+            )
+          : element
+      })
+    }
+  })
+
+  return refreshNotebookPreview(nextNotebook)
+})
+
+  return
+}
+
+    if (pointerModeRef.current === 'move' && dragElementRef.current) {
+  const previousPoint = dragElementRef.current.lastPoint
+
+  const deltaX = point.x - previousPoint.x
+  const deltaY = point.y - previousPoint.y
+
+  moveSelectedElement(
+    dragElementRef.current.elementId,
+    deltaX,
+    deltaY
+  )
+
+  dragElementRef.current.lastPoint = point
+  return
+}
+
     if (pointerModeRef.current === 'erase') {
       eraseAtPoint(point)
       return
@@ -391,24 +939,73 @@ export default function NotebookEditor() {
   }
 
   const handlePointerUp = () => {
+    if (pointerModeRef.current === 'selection-box') {
+  const box = selectionBox
+
+  if (box && currentPage) {
+    const selectedIds = currentPage.elements
+      .filter((element) => {
+        const bounds = getElementBounds(element)
+
+        return (
+          bounds.x < box.x + box.width &&
+          bounds.x + bounds.width > box.x &&
+          bounds.y < box.y + box.height &&
+          bounds.y + bounds.height > box.y
+        )
+      })
+      .map((element) => element.id)
+
+    setSelectedElementIds(selectedIds)
+    setSelectedElementId(
+      selectedIds.length > 0
+        ? selectedIds[selectedIds.length - 1]
+        : null
+    )
+  }
+
+  pointerModeRef.current = null
+  selectionStartRef.current = null
+  setSelectionBox(null)
+  return
+}
+
+    if (pointerModeRef.current === 'resize') {
+  pointerModeRef.current = null
+  resizeElementRef.current = null
+  return
+}
+    if (pointerModeRef.current === 'move') {
     pointerModeRef.current = null
-    if (!draftElement) return
+    dragElementRef.current = null
+    return
+  }
+
+  pointerModeRef.current = null
+  if (!draftElement) return
 
     if (draftElement.type === 'stroke' && draftElement.points.length > 1) {
       updateCurrentPage((page) => {
-        page.elements.push({ ...draftElement, id: `stroke_${Date.now()}` })
-      })
-    }
+        page.elements.push({
+  ...draftElement,
+  id: `stroke_${Date.now()}`,
+  groupId: null
+  })
+  })
+  }
 
     if (draftElement.type === 'shape') {
       const bounds = getElementBounds(draftElement)
       if (bounds.width > 6 || bounds.height > 6) {
         updateCurrentPage((page) => {
-          page.elements.push({ ...draftElement, id: `shape_${Date.now()}` })
-        })
-      }
-    }
-
+          page.elements.push({
+  ...draftElement,
+  id: `shape_${Date.now()}`,
+  groupId: null
+  })
+  })
+  }
+}
     setDraftElement(null)
   }
 
@@ -428,18 +1025,61 @@ export default function NotebookEditor() {
 
     updateCurrentPage((page) => {
       const payload = {
-        type: 'text',
-        x: editingText.x,
-        y: editingText.y,
-        text: normalizedText,
-        fontSize: Number(editingText.fontSize || textFontSize || 20),
-        fontFamily: editingText.fontFamily || textFontFamily || DEFAULT_TEXT_FONT,
-        color: editingText.color || color,
-        align: editingText.align || textAlign || 'left',
-        maxWidth: Number(editingText.maxWidth || textMaxWidth || 320),
-        width: Number(editingText.maxWidth || textMaxWidth || 320),
-        minHeight: Number(editingText.minHeight || 96)
-      }
+  type: 'text',
+  x: editingText.x,
+  y: editingText.y,
+  text: normalizedText,
+
+  fontSize: Number(editingText.fontSize || textFontSize || 20),
+  fontFamily:
+    editingText.fontFamily ||
+    textFontFamily ||
+    DEFAULT_TEXT_FONT,
+
+  fontWeight:
+    editingText.fontWeight ||
+    textFontWeight ||
+    'normal',
+
+  fontStyle:
+    editingText.fontStyle ||
+    textFontStyle ||
+    'normal',
+
+  textDecoration:
+    editingText.textDecoration ||
+    textTextDecoration ||
+    'none',
+
+  opacity: Number(
+    editingText.opacity ??
+    textOpacity ??
+    1
+  ),
+
+  lineHeight: Number(
+    editingText.lineHeight ||
+    textLineHeight ||
+    1.4
+  ),
+
+  color: editingText.color || color,
+  align: editingText.align || textAlign || 'left',
+
+  maxWidth: Number(
+    editingText.maxWidth ||
+    textMaxWidth ||
+    320
+  ),
+
+  width: Number(
+    editingText.maxWidth ||
+    textMaxWidth ||
+    320
+  ),
+
+  minHeight: Number(editingText.minHeight || 96)
+}
 
       if (editingText.elementId) {
         page.elements = page.elements.map((element) => {
@@ -643,6 +1283,319 @@ export default function NotebookEditor() {
     return () => document.removeEventListener('pointerdown', handleOutside)
   }, [])
 
+  useEffect(() => {
+  const handleKeyDown = (event) => {
+  const isTyping =
+  event.target instanceof HTMLInputElement ||
+  event.target instanceof HTMLTextAreaElement ||
+  event.target?.isContentEditable
+
+if (isTyping) return
+
+const isUndoShortcut =
+  (event.metaKey || event.ctrlKey) &&
+  !event.shiftKey &&
+  event.key.toLowerCase() === 'z'
+
+const isRedoShortcut =
+  (event.metaKey || event.ctrlKey) &&
+  event.shiftKey &&
+  event.key.toLowerCase() === 'z'
+
+if (isUndoShortcut) {
+  event.preventDefault()
+  handleUndo()
+  return
+}
+
+if (isRedoShortcut) {
+  event.preventDefault()
+  handleRedo()
+  return
+}
+
+const isGroupShortcut =
+  (event.metaKey || event.ctrlKey) &&
+  !event.shiftKey &&
+  !event.altKey &&
+  event.code === 'KeyG'
+
+const isUngroupShortcut =
+  (event.metaKey || event.ctrlKey) &&
+  event.altKey &&
+  !event.shiftKey &&
+  event.code === 'KeyG'
+
+if (isGroupShortcut) {
+  event.preventDefault()
+
+  if (selectedElementIds.length < 2) {
+    return
+  }
+
+  const newGroupId = `group_${Date.now()}`
+
+  updateCurrentPage((page) => {
+    page.elements = page.elements.map((element) =>
+      selectedElementIds.includes(element.id)
+        ? { ...element, groupId: newGroupId }
+        : element
+    )
+  })
+
+  return
+}
+
+if (isUngroupShortcut) {
+  event.preventDefault()
+
+  const selectedGroupIds = [
+    ...new Set(
+      currentPage.elements
+        .filter((element) =>
+          selectedElementIds.includes(element.id)
+        )
+        .map((element) => element.groupId)
+        .filter(Boolean)
+    )
+  ]
+
+  if (selectedGroupIds.length === 0) {
+    return
+  }
+
+  updateCurrentPage((page) => {
+    page.elements = page.elements.map((element) =>
+      selectedGroupIds.includes(element.groupId)
+        ? { ...element, groupId: null }
+        : element
+    )
+  })
+
+  setSelectedElementIds([])
+  setSelectedElementId(null)
+
+  return
+}
+
+if (!selectedElementId) return
+
+  if (event.key === 'Escape') {
+  event.preventDefault()
+  setSelectedElementId(null)
+  return
+}
+
+  const isCopyShortcut =
+  (event.metaKey || event.ctrlKey) &&
+  event.key.toLowerCase() === 'c'
+  const isPasteShortcut =
+  (event.metaKey || event.ctrlKey) &&
+  event.key.toLowerCase() === 'v'
+  const arrowKeys = ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown']
+
+if (arrowKeys.includes(event.key)) {
+  event.preventDefault()
+
+  const distance = event.shiftKey ? 10 : 2
+
+  const deltaX =
+    event.key === 'ArrowLeft'
+      ? -distance
+      : event.key === 'ArrowRight'
+        ? distance
+        : 0
+
+  const deltaY =
+    event.key === 'ArrowUp'
+      ? -distance
+      : event.key === 'ArrowDown'
+        ? distance
+        : 0
+
+  updateCurrentPage((page) => {
+    page.elements = page.elements.map((element) =>
+      element.id === selectedElementId
+        ? moveElementBy(element, deltaX, deltaY)
+        : element
+    )
+  })
+
+  return
+}
+
+const isBringForwardShortcut =
+  (event.metaKey || event.ctrlKey) &&
+  event.key === ']'
+
+const isSendBackwardShortcut =
+  (event.metaKey || event.ctrlKey) &&
+  event.key === '['
+
+if (isBringForwardShortcut) {
+  event.preventDefault()
+
+  updateCurrentPage((page) => {
+    const index = page.elements.findIndex(
+      (element) => element.id === selectedElementId
+    )
+
+    if (index === -1 || index === page.elements.length - 1) return
+
+    const nextElements = [...page.elements]
+    const [selected] = nextElements.splice(index, 1)
+    nextElements.splice(index + 1, 0, selected)
+
+    page.elements = nextElements
+  })
+
+  return
+}
+
+if (isSendBackwardShortcut) {
+  event.preventDefault()
+
+  updateCurrentPage((page) => {
+    const index = page.elements.findIndex(
+      (element) => element.id === selectedElementId
+    )
+
+    if (index <= 0) return
+
+    const nextElements = [...page.elements]
+    const [selected] = nextElements.splice(index, 1)
+    nextElements.splice(index - 1, 0, selected)
+
+    page.elements = nextElements
+  })
+
+  return
+}
+
+if (isCopyShortcut) {
+  event.preventDefault()
+
+  const idsToCopy =
+    selectedElementIds.length > 0
+      ? selectedElementIds
+      : [selectedElementId]
+
+  const elementsToCopy = currentPage.elements.filter((element) =>
+    idsToCopy.includes(element.id)
+  )
+
+  clipboardRef.current = cloneNotebook(elementsToCopy)
+  return
+}
+
+if (isPasteShortcut) {
+  event.preventDefault()
+
+  if (!Array.isArray(clipboardRef.current)) return
+  if (clipboardRef.current.length === 0) return
+
+  const pastedIds = clipboardRef.current.map(
+    (_, index) => `element_${Date.now()}_${index}`
+  )
+
+  const pastedElements = clipboardRef.current.map((element, index) =>
+    moveElementBy(
+      {
+        ...cloneNotebook(element),
+        id: pastedIds[index]
+      },
+      20,
+      20
+    )
+  )
+
+  updateCurrentPage((page) => {
+    page.elements.push(...pastedElements)
+  })
+
+  clipboardRef.current = cloneNotebook(pastedElements)
+  setSelectedElementIds(pastedIds)
+  setSelectedElementId(pastedIds[pastedIds.length - 1])
+  return
+}
+
+  const isDuplicateShortcut =
+    (event.metaKey || event.ctrlKey) &&
+    event.key.toLowerCase() === 'd'
+
+  if (isDuplicateShortcut) {
+  event.preventDefault()
+
+  const idsToDuplicate =
+    selectedElementIds.length > 0
+      ? selectedElementIds
+      : [selectedElementId]
+
+  const duplicatedIds = idsToDuplicate.map(
+    (_, index) => `element_${Date.now()}_${index}`
+  )
+
+  updateCurrentPage((page) => {
+    const elementsToDuplicate = page.elements.filter((element) =>
+      idsToDuplicate.includes(element.id)
+    )
+
+    const duplicatedElements = elementsToDuplicate.map((element, index) =>
+      moveElementBy(
+        {
+          ...cloneNotebook(element),
+          id: duplicatedIds[index]
+        },
+        20,
+        20
+      )
+    )
+
+    page.elements.push(...duplicatedElements)
+  })
+
+  setSelectedElementIds(duplicatedIds)
+  setSelectedElementId(
+    duplicatedIds.length > 0
+      ? duplicatedIds[duplicatedIds.length - 1]
+      : null
+  )
+
+  return
+}
+
+  if (event.key !== 'Delete' && event.key !== 'Backspace') {
+    return
+  }
+
+  event.preventDefault()
+
+  const idsToDelete =
+  selectedElementIds.length > 0
+    ? selectedElementIds
+    : [selectedElementId]
+
+updateCurrentPage((page) => {
+  page.elements = page.elements.filter(
+    (element) => !idsToDelete.includes(element.id)
+  )
+})
+
+setSelectedElementId(null)
+setSelectedElementIds([])
+}
+
+  window.addEventListener('keydown', handleKeyDown)
+
+  return () => {
+    window.removeEventListener('keydown', handleKeyDown)
+  }
+}, [
+  selectedElementId,
+  selectedElementIds,
+  updateCurrentPage
+])
+
   if (!notebook || !currentPage) {
     return null
   }
@@ -703,17 +1656,22 @@ export default function NotebookEditor() {
         </div>
 
         <div className="notes-editor-toolbar__group notes-editor-toolbar__group--tools notes-primary-tools" ref={toolbarToolsRef}>
-          <ButtonGroup className="notes-tool-strip" aria-label="Outils principaux">
-            {TOOL_OPTIONS.filter((tool) => ['pen', 'highlighter', 'eraser', 'text', 'import-pdf'].includes(tool.id)).map((tool) => {
-              const iconByTool = {
-                pen: <PenTool size={16} />,
-                highlighter: <Highlighter size={16} />,
-                eraser: <Eraser size={16} />,
-                text: <Type size={16} />,
-                'import-pdf': <FolderOpen size={16} />
-              }
+          <ButtonGroup className="notes-tool-strip" aria-label="Outils principaux">       
+  {TOOL_OPTIONS
+  .filter((tool) =>
+    ['select', 'pen', 'highlighter', 'eraser', 'text', 'import-pdf'].includes(tool.id)
+  )
+  .map((tool) => {
+    const iconByTool = {
+      select: <MousePointer2 size={16} />,
+      pen: <PenTool size={16} />,
+      highlighter: <Highlighter size={16} />,
+      eraser: <Eraser size={16} />,
+      text: <Type size={16} />,
+      'import-pdf': <FolderOpen size={16} />
+    }
 
-              return (
+    return (
               <Button
                 key={tool.id}
                 variant="light"
@@ -863,10 +1821,21 @@ export default function NotebookEditor() {
                           setEditingText((current) => (current ? { ...current, fontFamily: nextValue } : current))
                         }}
                       >
-                        <option value={DEFAULT_TEXT_FONT}>Systeme</option>
-                        <option value="'Georgia', serif">Georgia</option>
-                        <option value="'Trebuchet MS', sans-serif">Trebuchet</option>
-                        <option value="'Courier New', monospace">Courier</option>
+                        <option value={DEFAULT_TEXT_FONT}>Système</option>
+<option value="Arial, sans-serif">Arial</option>
+<option value="Helvetica, Arial, sans-serif">Helvetica</option>
+<option value="Verdana, sans-serif">Verdana</option>
+<option value="Georgia, serif">Georgia</option>
+<option value="'Times New Roman', serif">Times New Roman</option>
+<option value="'Courier New', monospace">Courier New</option>
+<option value="'Trebuchet MS', sans-serif">Trebuchet MS</option>
+<option value="'Comic Sans MS', cursive">Comic Sans MS</option>
+<option value="Poppins, sans-serif">Poppins</option>
+<option value="Montserrat, sans-serif">Montserrat</option>
+<option value="Roboto, sans-serif">Roboto</option>
+<option value="'Open Sans', sans-serif">Open Sans</option>
+<option value="Lato, sans-serif">Lato</option>
+<option value="Merriweather, serif">Merriweather</option>
                       </Form.Select>
                     </div>
 
@@ -874,11 +1843,16 @@ export default function NotebookEditor() {
                       <div className="notes-tool-panel__label">Taille <span>{textFontSize}px</span></div>
                       <Form.Range
                         className="notes-compact-range"
-                        min={10}
-                        max={72}
+                        min={8}
+max={96}
+step={1}
                         value={textFontSize}
                         onChange={(event) => {
-                          const nextValue = clamp(Number(event.target.value) || 20, 10, 72)
+                          const nextValue = clamp(
+  Number(event.target.value) || 20,
+  8,
+  96
+)
                           setTextFontSize(nextValue)
                           setEditingText((current) => (current ? { ...current, fontSize: nextValue } : current))
                         }}
@@ -886,28 +1860,136 @@ export default function NotebookEditor() {
                     </div>
 
                     <div className="notes-tool-panel__section">
-                      <div className="notes-tool-panel__label">Alignement</div>
-                      <ButtonGroup className="notes-compact-toggle">
-                        {[
-                          { id: 'left', label: 'G' },
-                          { id: 'center', label: 'C' },
-                          { id: 'right', label: 'D' }
-                        ].map((option) => (
-                          <Button
-                            key={option.id}
-                            variant="light"
-                            className={textAlign === option.id ? 'is-active' : ''}
-                            onClick={() => {
-                              setTextAlign(option.id)
-                              setEditingText((current) => (current ? { ...current, align: option.id } : current))
-                            }}
-                            title={option.id}
-                          >
-                            {option.label}
-                          </Button>
-                        ))}
-                      </ButtonGroup>
-                    </div>
+  <div className="notes-tool-panel__label">
+    Style
+  </div>
+
+  <ButtonGroup className="notes-compact-toggle">
+    <Button
+      type="button"
+      variant="light"
+      className={
+        textFontWeight === 'bold'
+          ? 'is-active fw-bold'
+          : 'fw-bold'
+      }
+      onClick={() => {
+        const nextValue =
+          textFontWeight === 'bold'
+            ? 'normal'
+            : 'bold'
+
+        setTextFontWeight(nextValue)
+
+        setEditingText((current) =>
+          current
+            ? {
+                ...current,
+                fontWeight: nextValue
+              }
+            : current
+        )
+      }}
+      title="Gras"
+      aria-label="Gras"
+    >
+      G
+    </Button>
+
+    <Button
+      type="button"
+      variant="light"
+      className={
+        textFontStyle === 'italic'
+          ? 'is-active fst-italic'
+          : 'fst-italic'
+      }
+      onClick={() => {
+        const nextValue =
+          textFontStyle === 'italic'
+            ? 'normal'
+            : 'italic'
+
+        setTextFontStyle(nextValue)
+
+        setEditingText((current) =>
+          current
+            ? {
+                ...current,
+                fontStyle: nextValue
+              }
+            : current
+        )
+      }}
+      title="Italique"
+      aria-label="Italique"
+    >
+      I
+    </Button>
+
+    <Button
+      type="button"
+      variant="light"
+      className={
+        textTextDecoration === 'underline'
+          ? 'is-active text-decoration-underline'
+          : 'text-decoration-underline'
+      }
+      onClick={() => {
+        const nextValue =
+          textTextDecoration === 'underline'
+            ? 'none'
+            : 'underline'
+
+        setTextTextDecoration(nextValue)
+
+        setEditingText((current) =>
+          current
+            ? {
+                ...current,
+                textDecoration: nextValue
+              }
+            : current
+        )
+      }}
+      title="Souligné"
+      aria-label="Souligné"
+    >
+      S
+    </Button>
+
+    <Button
+      type="button"
+      variant="light"
+      className={
+        textTextDecoration === 'line-through'
+          ? 'is-active text-decoration-line-through'
+          : 'text-decoration-line-through'
+      }
+      onClick={() => {
+        const nextValue =
+          textTextDecoration === 'line-through'
+            ? 'none'
+            : 'line-through'
+
+        setTextTextDecoration(nextValue)
+
+        setEditingText((current) =>
+          current
+            ? {
+                ...current,
+                textDecoration: nextValue
+              }
+            : current
+        )
+      }}
+      title="Barré"
+      aria-label="Barré"
+    >
+      B
+    </Button>
+  </ButtonGroup>
+</div>
                   </>
                 )}
               </>
@@ -1103,9 +2185,61 @@ export default function NotebookEditor() {
                       />
                     )
                   })()}
+                  {activeTool === 'select' && (
+  <>
+    {selectedElementBounds && (
+  <rect
+    x={selectedElementBounds.x}
+    y={selectedElementBounds.y}
+    width={selectedElementBounds.width}
+    height={selectedElementBounds.height}
+    fill="none"
+    stroke="#0d6efd"
+    strokeWidth="3"
+    strokeDasharray="10 6"
+    pointerEvents="none"
+  />
+)}
+
+    {selectedElementBounds && (
+      <circle
+        data-resize-handle="true"
+        cx={selectedElementBounds.x + selectedElementBounds.width}
+        cy={selectedElementBounds.y + selectedElementBounds.height}
+        r="14"
+        fill="#ffffff"
+        stroke="#0d6efd"
+        strokeWidth="4"
+        pointerEvents="all"
+        style={{
+          cursor: 'nwse-resize',
+          touchAction: 'none'
+        }}
+        onPointerDown={handleResizePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onPointerCancel={handlePointerUp}
+      />
+    )}
+{selectionBox && (
+  <rect
+    x={selectionBox.x}
+    y={selectionBox.y}
+    width={selectionBox.width}
+    height={selectionBox.height}
+    fill="rgba(13,110,253,0.08)"
+    stroke="#0d6efd"
+    strokeWidth="2"
+    strokeDasharray="8 6"
+    pointerEvents="none"
+  />
+)}
+  </>
+)}
+
                 </svg>
 
-                {currentPage.elements
+                 {currentPage.elements
                   .filter((element) => element.type === 'text' && element.id !== editingText?.elementId)
                   .map((element) => (
                     <div
@@ -1118,10 +2252,17 @@ export default function NotebookEditor() {
                         top: `${(element.y / PAPER_HEIGHT) * 100}%`,
                         width: `${((element.maxWidth || element.width || 320) / PAPER_WIDTH) * 100}%`,
                         minHeight: `${((element.minHeight || element.height || 96) / PAPER_HEIGHT) * 100}%`,
-                        color: element.color,
-                        fontSize: `${element.fontSize || 20}px`,
-                        fontFamily: element.fontFamily || DEFAULT_TEXT_FONT,
-                        textAlign: element.align || 'left'
+                        color: element.color || '#111827',
+fontSize: `${element.fontSize || 20}px`,
+fontFamily: element.fontFamily || DEFAULT_TEXT_FONT,
+fontWeight: element.fontWeight || 'normal',
+fontStyle: element.fontStyle || 'normal',
+textDecoration: element.textDecoration || 'none',
+opacity: element.opacity ?? 1,
+lineHeight: element.lineHeight || 1.4,
+textAlign: element.align || 'left',
+whiteSpace: 'pre-wrap',
+overflowWrap: 'break-word'
                       }}
                     >
                       {element.text}
@@ -1137,10 +2278,15 @@ export default function NotebookEditor() {
                       top: `${(editingText.y / PAPER_HEIGHT) * 100}%`,
                       width: `${((editingText.maxWidth || editingText.width || 320) / PAPER_WIDTH) * 100}%`,
                       minHeight: `${((editingText.minHeight || 96) / PAPER_HEIGHT) * 100}%`,
-                      color: editingText.color,
-                      fontSize: `${editingText.fontSize}px`,
-                      fontFamily: editingText.fontFamily || DEFAULT_TEXT_FONT,
-                      textAlign: editingText.align || 'left'
+                      color: editingText.color || '#111827',
+fontSize: `${editingText.fontSize || 20}px`,
+fontFamily: editingText.fontFamily || DEFAULT_TEXT_FONT,
+fontWeight: editingText.fontWeight || 'normal',
+fontStyle: editingText.fontStyle || 'normal',
+textDecoration: editingText.textDecoration || 'none',
+opacity: editingText.opacity ?? 1,
+lineHeight: editingText.lineHeight || 1.4,
+textAlign: editingText.align || 'left'
                     }}
                     value={editingText.text}
                     onChange={(event) => setEditingText((current) => ({ ...current, text: event.target.value }))}

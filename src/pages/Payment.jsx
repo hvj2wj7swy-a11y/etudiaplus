@@ -1,7 +1,8 @@
 import React from 'react'
 import { Container, Row, Col, Card, Button, Alert } from 'react-bootstrap'
-import { Link, Navigate, useNavigate, useSearchParams } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext.jsx'
+import { subscriptionApi } from '../services/api'
 
 const PLAN_DETAILS = {
   monthly: { label: 'Mensuel', price: '9,99 $ CAD / mois' },
@@ -11,8 +12,7 @@ const PLAN_DETAILS = {
 export default function Payment() {
   const [searchParams] = useSearchParams()
   const plan = searchParams.get('plan') === 'annual' ? 'annual' : 'monthly'
-  const { user, activateSubscription } = useAuth()
-  const navigate = useNavigate()
+  const { user } = useAuth()
 
   if (!user) return <Navigate to="/login" replace />
   if (user.role === 'admin') return <Navigate to="/tools" replace />
@@ -21,9 +21,32 @@ export default function Payment() {
   }
 
   const confirmPayment = async () => {
-    const result = await activateSubscription(plan)
-    if (result?.success) navigate('/documents', { replace: true })
+  try {
+    const token =
+      window.localStorage.getItem('edudia_auth_token')
+
+    const result =
+      await subscriptionApi.createCheckoutSession(
+        token,
+        { plan }
+      )
+
+    if (result?.data?.url) {
+      window.location.href = result.data.url
+      return
+    }
+
+    console.error(
+      'Aucune URL Stripe reçue :',
+      result
+    )
+  } catch (error) {
+    console.error(
+      'Erreur paiement Stripe :',
+      error
+    )
   }
+}
 
   const selectedPlan = PLAN_DETAILS[plan]
 
@@ -33,16 +56,19 @@ export default function Payment() {
         <Col lg={7}>
           <Card className="shadow-sm">
             <Card.Body>
-              <h2 className="mb-3">Paiement simulé</h2>
-              <Alert variant="info">Mode de preparation Stripe: tant que Stripe n est pas configure, le paiement est simule.</Alert>
+              <h2 className="mb-3">Paiement sécurisé</h2>
 
-              <p><strong>Offre selectionnee :</strong> {selectedPlan.label}</p>
-              <p><strong>Prix :</strong> {selectedPlan.price}</p>
-              <p className="text-muted">Cliquez sur "Valider le paiement" pour activer votre abonnement.</p>
+<Alert variant="info">
+  Vous serez redirigé vers Stripe pour finaliser votre abonnement. Votre essai gratuit de 30 jours sera appliqué avant la première facturation.
+</Alert>
+
+<p className="text-muted">
+  Cliquez sur "Continuer vers Stripe" pour poursuivre.
+</p>
 
               <div className="d-flex gap-2 justify-content-end mt-4">
                 <Button as={Link} to="/subscription" variant="outline-secondary">Retour</Button>
-                <Button onClick={confirmPayment}>Valider le paiement</Button>
+                <Button onClick={confirmPayment}>Continuer vers Stripe</Button>
               </div>
             </Card.Body>
           </Card>

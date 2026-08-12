@@ -56,16 +56,19 @@ export default function Payment() {
         <Col lg={7}>
           <Card className="shadow-sm">
             <Card.Body>
-              <h2 className="mb-3">Paiement simulé</h2>
-              <Alert variant="info">Mode de preparation Stripe: tant que Stripe n est pas configure, le paiement est simule.</Alert>
+              <h2 className="mb-3">Paiement sécurisé</h2>
 
-              <p><strong>Offre selectionnee :</strong> {selectedPlan.label}</p>
-              <p><strong>Prix :</strong> {selectedPlan.price}</p>
-              <p className="text-muted">Cliquez sur "Valider le paiement" pour activer votre abonnement.</p>
+<Alert variant="info">
+  Vous serez redirigé vers Stripe pour finaliser votre abonnement. Votre essai gratuit de 30 jours sera appliqué avant la première facturation.
+</Alert>
+
+<p className="text-muted">
+  Cliquez sur "Continuer vers Stripe" pour poursuivre.
+</p>
 
               <div className="d-flex gap-2 justify-content-end mt-4">
                 <Button as={Link} to="/subscription" variant="outline-secondary">Retour</Button>
-                <Button onClick={confirmPayment}>Valider le paiement</Button>
+                <Button onClick={confirmPayment}>Continuer vers Stripe</Button>
               </div>
             </Card.Body>
           </Card>

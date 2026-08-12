@@ -1,8 +1,13 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import { Container, Row, Col, Card, Form, Button, Alert, ButtonGroup, Badge, Modal } from 'react-bootstrap'
+import { Container, Row, Col, Card, Form, Button, Alert, ButtonGroup, Badge, Modal, Accordion } from 'react-bootstrap'
 import { useAuth } from '../context/AuthContext.jsx'
+import {
+  documentAPI,
+  API_BASE_URL
+} from '../services/api'
 import './Documents.css'
 
+const BACKEND_ORIGIN = API_BASE_URL.replace(/\/api\/?$/, '')
 const DOCUMENTS_KEY = 'edudia_documents'
 const USERS_KEY = 'edudia_users'
 const CURRENT_USER_KEY = 'edudia_current_user'
@@ -94,6 +99,70 @@ const DEFAULT_DOCUMENTS = [
     downloadCount: 0
   }
 ]
+
+const COURSES_BY_CATEGORY = {
+  Général: [
+    'Philosophie',
+    'Littérature',
+    'Français',
+    'Anglais',
+    'Éducation physique'
+  ],
+
+  "Techniques de l'informatique": [
+    'Programmation',
+    'Développement Web',
+    'Bases de données',
+    'Réseaux',
+    'Linux',
+    'Mathématiques'
+  ],
+
+  "Sciences humaines": [
+    'Psychologie',
+    'Histoire',
+    'Économie',
+    'Sociologie',
+    'Politique',
+    'Méthodes quantitatives'
+  ],
+
+  "Sciences de la nature": [
+    'Biologie',
+    'Chimie',
+    'Physique',
+    'Calcul différentiel',
+    'Calcul intégral',
+    'Méthodes scientifiques'
+  ],
+
+  "Soins infirmiers": [
+    'Anatomie',
+    'Physiologie',
+    'Pharmacologie',
+    'Soins de base',
+    'Stages cliniques',
+    'Communication professionnelle'
+  ],
+
+  Administration: [
+    'Comptabilité',
+    'Marketing',
+    'Gestion',
+    'Économie',
+    'Finance',
+    'Droit des affaires'
+  ],
+
+  "Arts, lettres et communication": [
+    'Écriture',
+    'Littérature',
+    'Communication',
+    'Cinéma',
+    'Photographie',
+    'Création numérique'
+  ]
+}
 
 const safeParse = (value, fallback) => {
   try {
@@ -327,11 +396,43 @@ const getStoredDocuments = () => {
 }
 
 const getTypeIcon = (type) => {
-  if (type === 'pdf') return 'PDF'
-  if (type === 'word') return 'WORD'
-  if (type === 'powerpoint') return 'PPT'
-  if (type === 'image') return 'IMG'
-  return 'FILE'
+  if (type === 'pdf') {
+    return {
+      label: 'PDF',
+      icon: '📄',
+      background: '#dc3545'
+    }
+  }
+
+  if (type === 'word') {
+    return {
+      label: 'WORD',
+      icon: '📘',
+      background: '#0d6efd'
+    }
+  }
+
+  if (type === 'powerpoint') {
+    return {
+      label: 'PPT',
+      icon: '📙',
+      background: '#fd7e14'
+    }
+  }
+
+  if (type === 'image') {
+    return {
+      label: 'IMAGE',
+      icon: '🖼️',
+      background: '#6f42c1'
+    }
+  }
+
+  return {
+    label: 'FICHIER',
+    icon: '📎',
+    background: '#6c757d'
+  }
 }
 
 const triggerBrowserDownload = (doc) => {
@@ -346,11 +447,13 @@ const triggerBrowserDownload = (doc) => {
 
 export default function Documents() {
   const { user } = useAuth()
+  const token = window.localStorage.getItem('edudia_auth_token')
   const programme = user?.programme || ''
   const isAdmin = user?.role === 'admin'
   const [query, setQuery] = useState('')
   const [filterMode, setFilterMode] = useState('general')
-  const [documents, setDocuments] = useState(() => getStoredDocuments())
+  const [sortMode, setSortMode] = useState('recent')
+  const [documents, setDocuments] = useState([])
   const [form, setForm] = useState({
     title: '',
     course: '',
@@ -371,40 +474,153 @@ export default function Documents() {
     setFavorites(readFavorites())
   }, [user?.id])
 
+  useEffect(() => {
+  const loadDocuments = async () => {
+    try {
+      setError('')
+
+      const response = await documentAPI.getAllDocuments(token)
+      const receivedDocuments = response.data?.documents || []
+
+      const normalizedDocuments = receivedDocuments.map((doc) =>
+        normalizeDocument({
+          id: doc.id,
+          title: doc.title,
+          description: doc.description || '',
+          category:
+            doc.program === 'Général'
+              ? 'Général'
+              : doc.program,
+          programme: doc.program,
+          course:
+            doc.course_name ||
+            doc.course_code ||
+            'Sans cours',
+          author:
+            `${doc.first_name || ''} ${doc.last_name || ''}`.trim() ||
+            'Étudiant',
+          authorId: doc.uploaded_by,
+          date: doc.created_at,
+          fileName:
+            doc.file_url?.split('/').pop() ||
+            'document',
+          fileType: getFileTypeLabel(
+            getFileExtension(doc.file_url || '')
+          ),
+          fileUrl: doc.file_url
+            ? `${BACKEND_ORIGIN}${doc.file_url}`
+            : '',
+          rating: Number(doc.average_rating || 0),
+          downloadCount: Number(doc.download_count || 0),
+          ratings: [],
+          comments: []
+        })
+      )
+
+      setDocuments(normalizedDocuments)
+    } catch (error) {
+      console.error('Erreur chargement documents :', error)
+
+      setError(
+        error.message ||
+          'Impossible de charger les documents.'
+      )
+    }
+  }
+
+  if (token) {
+    loadDocuments()
+  }
+}, [token])
+
   const allowedCategories = useMemo(() => {
     if (!programme) return ['Général']
     return ['Général', programme]
   }, [programme])
+
+const availableCourses = useMemo(() => {
+  return COURSES_BY_CATEGORY[form.category] || []
+}, [form.category])
 
   const visibleDocuments = useMemo(() => {
     return documents.filter((doc) => doc.category === 'Général' || (programme && doc.category === programme))
   }, [documents, programme])
 
   const filteredDocuments = useMemo(() => {
-    const normalizedQuery = query.toLowerCase().trim()
-    return visibleDocuments
-      .filter((doc) => {
-        if (filterMode === 'general') return doc.category === 'Général'
-        if (filterMode === 'program') return programme && doc.category === programme
-        return true
-      })
-      .filter((doc) => {
-        if (!normalizedQuery) return true
-        return (
-          String(doc.title || '').toLowerCase().includes(normalizedQuery) ||
-          String(doc.course || '').toLowerCase().includes(normalizedQuery)
-        )
-      })
-  }, [visibleDocuments, filterMode, query, programme])
+  const normalizedQuery = query.toLowerCase().trim()
+
+  const nextDocuments = visibleDocuments
+    .filter((doc) => {
+      if (filterMode === 'general') {
+        return doc.category === 'Général'
+      }
+
+      if (filterMode === 'program') {
+        return programme && doc.category === programme
+      }
+
+      return true
+    })
+    .filter((doc) => {
+      if (!normalizedQuery) return true
+
+      return (
+        String(doc.title || '')
+          .toLowerCase()
+          .includes(normalizedQuery) ||
+        String(doc.course || '')
+          .toLowerCase()
+          .includes(normalizedQuery)
+      )
+    })
+
+  return [...nextDocuments].sort((left, right) => {
+    if (sortMode === 'rating') {
+      return Number(right.rating || 0) -
+        Number(left.rating || 0)
+    }
+
+    if (sortMode === 'downloads') {
+      return Number(right.downloadCount || 0) -
+        Number(left.downloadCount || 0)
+    }
+
+    if (sortMode === 'alphabetical') {
+      return String(left.title || '').localeCompare(
+        String(right.title || ''),
+        'fr',
+        { sensitivity: 'base' }
+      )
+    }
+
+    return (
+      new Date(right.date || 0).getTime() -
+      new Date(left.date || 0).getTime()
+    )
+  })
+}, [
+  visibleDocuments,
+  filterMode,
+  query,
+  programme,
+  sortMode
+])
 
   const groupedDocuments = useMemo(() => {
-    return filteredDocuments.reduce((acc, doc) => {
-      const key = doc.category
-      acc[key] = acc[key] || []
-      acc[key].push(doc)
-      return acc
-    }, {})
-  }, [filteredDocuments])
+  return filteredDocuments.reduce((acc, doc) => {
+    const courseName =
+      String(doc.course || '').trim() ||
+      'Sans cours'
+
+    if (!acc[courseName]) {
+      acc[courseName] = []
+    }
+
+    acc[courseName].push(doc)
+
+    return acc
+  }, {})
+}, [filteredDocuments])
 
   const getDocumentRatings = (doc) => {
     return Array.isArray(doc.ratings) ? doc.ratings : []
@@ -469,95 +685,203 @@ export default function Documents() {
   }
 
   const handleFormChange = (event) => {
-    const { name, value } = event.target
-    setForm((previous) => ({ ...previous, [name]: value }))
-  }
+  const { name, value } = event.target
+
+  setForm((previous) => {
+    if (name === 'category') {
+      return {
+        ...previous,
+        category: value,
+        course: ''
+      }
+    }
+
+    return {
+      ...previous,
+      [name]: value
+    }
+  })
+}
 
   const handleFileChange = (event) => {
     const file = event.target.files?.[0] || null
     setForm((previous) => ({ ...previous, file }))
   }
 
-  const handleAddDocument = (event) => {
-    event.preventDefault()
-    setError('')
-    setMessage('')
+const handleAddDocument = async (event) => {
+  event.preventDefault()
 
-    const title = form.title.trim()
-    const course = form.course.trim()
-    const category = form.category
-    const file = form.file
+  setError('')
+  setMessage('')
 
-    if (!title || !course || !category || !file) {
-      setError('Remplis le titre, le cours, la catégorie et choisis un fichier.')
-      return
-    }
+  const title = form.title.trim()
+  const course = form.course.trim()
+  const category = form.category
+  const file = form.file
 
-    if (!allowedCategories.includes(category)) {
-      setError('Catégorie invalide pour ton profil.')
-      return
-    }
+  if (!title || !course || !category || !file) {
+    setError(
+      'Remplis le titre, le cours, la catégorie et choisis un fichier.'
+    )
+    return
+  }
 
-    const extension = getFileExtension(file.name)
-    if (!ACCEPTED_EXTENSIONS.includes(extension)) {
-      setError('Type de fichier non accepté.')
-      return
-    }
+  if (!allowedCategories.includes(category)) {
+    setError('Catégorie invalide pour ton profil.')
+    return
+  }
 
-    if (file.size > MAX_FILE_SIZE) {
-      setError('Le fichier dépasse 10 Mo.')
-      return
-    }
+  const extension = getFileExtension(file.name)
 
-    const fileType = getFileTypeLabel(extension)
-    const fileUrl = URL.createObjectURL(file)
+  if (!ACCEPTED_EXTENSIONS.includes(extension)) {
+    setError('Type de fichier non accepté.')
+    return
+  }
 
-    const newDocument = normalizeDocument({
-      id: Date.now(),
-      title,
-      category,
-      programme: category === 'Général' ? 'Général' : programme,
-      course,
-      author: user?.nom || 'Étudiant',
-      authorId: user?.id || null,
-      date: new Date().toISOString().slice(0, 10),
-      fileName: file.name,
-      fileType,
-      fileUrl,
-      rating: 0,
-      ratingBonusGranted: false,
-      downloadCount: 0
-    })
+  if (file.size > MAX_FILE_SIZE) {
+    setError('Le fichier dépasse 10 Mo.')
+    return
+  }
 
-    persistDocuments([newDocument, ...documents])
-    if (user?.id) {
-      awardPointsToUser(user.id, POINTS.documentPublished, 'documentPublished')
-    }
+  const formData = new FormData()
 
-    const recipients = getStoredUsers().filter((storedUser) => {
-      if (storedUser.role === 'admin') return false
-      if (storedUser.id === user?.id) return false
-      if (category === 'Général') return true
-      return storedUser.programme === programme
-    })
+  formData.append('file', file)
+  formData.append('title', title)
+  formData.append('description', '')
+  formData.append(
+    'school',
+    user?.school || user?.ecole || 'Établissement non précisé'
+  )
+  formData.append(
+    'program',
+    category === 'Général'
+      ? 'Général'
+      : programme
+  )
+  formData.append('courseCode', course)
+  formData.append('courseName', course)
 
-    queueNotifications(
-      recipients.map((recipient) =>
-        createNotification({
-          id: `document-${newDocument.id}-${recipient.id}`,
-          userId: recipient.id,
-          title: category === 'Général' ? 'Nouveau document Général' : 'Nouveau document dans votre programme',
-          message: `${title} a été ajouté${category === 'Général' ? ' à la bibliothèque générale.' : ` pour le programme ${programme}.`}`,
-          type: 'document'
-        })
-      )
+  try {
+    await documentAPI.uploadDocument(
+      token,
+      formData
     )
 
-    setForm({ title: '', course: '', category: 'Général', file: null })
-    const input = document.getElementById('document-file-input')
-    if (input) input.value = ''
-    setMessage('Document importé avec succès. +10 points ajoutés.')
+    const adminUsers = getStoredUsers().filter(
+  (storedUser) => storedUser.role === 'admin'
+)
+
+queueNotifications(
+  adminUsers
+    .filter(
+      (adminUser) =>
+        Number(adminUser.id) !== Number(user?.id)
+    )
+    .map((adminUser) =>
+      createNotification({
+        id: `document-published-${Date.now()}-${adminUser.id}`,
+        userId: adminUser.id,
+        title: 'Nouveau document publié',
+        message: `${
+          user?.nom ||
+          user?.firstName ||
+          user?.first_name ||
+          'Un étudiant'
+        } a publié le document « ${title} ».`,
+        type: 'document'
+      })
+    )
+)
+
+    const response =
+      await documentAPI.getAllDocuments(token)
+
+    const receivedDocuments =
+      response.data?.documents || []
+
+    const normalizedDocuments =
+      receivedDocuments.map((doc) =>
+        normalizeDocument({
+          id: doc.id,
+          title: doc.title,
+          description: doc.description || '',
+          category:
+            doc.program === 'Général'
+              ? 'Général'
+              : doc.program,
+          programme: doc.program,
+          course:
+            doc.course_name ||
+            doc.course_code ||
+            'Sans cours',
+          author:
+            `${doc.first_name || ''} ${
+              doc.last_name || ''
+            }`.trim() || 'Étudiant',
+          authorId: doc.uploaded_by,
+          date: doc.created_at,
+          fileName:
+            doc.file_url?.split('/').pop() ||
+            file.name,
+          fileType: getFileTypeLabel(
+            getFileExtension(
+              doc.file_url || file.name
+            )
+          ),
+          fileUrl: doc.file_url
+            ? `${BACKEND_ORIGIN}${doc.file_url}`
+            : '',
+          rating: Number(
+            doc.average_rating || 0
+          ),
+          downloadCount: Number(
+            doc.download_count || 0
+          ),
+          ratings: [],
+          comments: []
+        })
+      )
+
+    setDocuments(normalizedDocuments)
+
+    if (user?.id) {
+      awardPointsToUser(
+        user.id,
+        POINTS.documentPublished,
+        'documentPublished'
+      )
+    }
+
+    setForm({
+      title: '',
+      course: '',
+      category: 'Général',
+      file: null
+    })
+
+    const input = document.getElementById(
+      'document-file-input'
+    )
+
+    if (input) {
+      input.value = ''
+    }
+
+    setMessage(
+      'Document importé avec succès. +10 points ajoutés.'
+    )
+  } catch (error) {
+    console.error(
+      'Erreur importation document :',
+      error
+    )
+
+    setError(
+      error.message ||
+        'Impossible d’importer le document.'
+    )
   }
+}
 
   const handleView = (doc) => {
     if (!doc.fileUrl) return
@@ -577,8 +901,45 @@ export default function Documents() {
       awardPointsToUser(doc.authorId, POINTS.documentDownloaded, 'documentDownloaded')
     }
 
+    if (
+  doc.authorId &&
+  Number(doc.authorId) !== Number(user?.id)
+) {
+  queueNotifications([
+    createNotification({
+      id: `document-download-${doc.id}-${user.id}-${Date.now()}`,
+      userId: doc.authorId,
+      title: 'Votre document a été téléchargé',
+      message: `${
+        user?.nom ||
+        user?.firstName ||
+        user?.first_name ||
+        'Un étudiant'
+      } a téléchargé votre document « ${doc.title} ».`,
+      type: 'document'
+    })
+  ])
+}
+
     triggerBrowserDownload(doc)
   }
+
+  const handleDeleteDocument = async (docId) => {
+  if (!window.confirm('Supprimer ce document ?')) return
+
+  try {
+    await documentAPI.deleteDocument(token, docId)
+
+    setDocuments((previous) =>
+      previous.filter((doc) => doc.id !== docId)
+    )
+
+    setMessage('Document supprimé.')
+  } catch (error) {
+    console.error(error)
+    setError(error.message || 'Impossible de supprimer le document.')
+  }
+}
 
   const handleRateDocument = (doc, rating) => {
     if (!user?.id) return
@@ -614,6 +975,26 @@ export default function Documents() {
     })
 
     persistDocuments(nextDocuments)
+
+    if (
+  doc.authorId &&
+  Number(doc.authorId) !== Number(user?.id)
+) {
+  queueNotifications([
+    createNotification({
+      id: `document-rating-${doc.id}-${user.id}-${Date.now()}`,
+      userId: doc.authorId,
+      title: 'Nouvelle note sur votre document',
+      message: `${
+        user?.nom ||
+        user?.firstName ||
+        user?.first_name ||
+        'Un étudiant'
+      } a donné ${nextRating}/5 à votre document « ${doc.title} ».`,
+      type: 'document'
+    })
+  ])
+}
 
     if (shouldGrantBonus) {
       awardPointsToUser(doc.authorId, POINTS.documentRatedFiveStars, 'documentRatedFiveStars')
@@ -707,29 +1088,63 @@ export default function Documents() {
     setReportDescription('')
   }
 
-  const handleSubmitReport = (event) => {
-    event.preventDefault()
-    if (!selectedDocument) return
+  const handleSubmitReport = async (event) => {
+  event.preventDefault()
 
-    const existingReports = safeParse(window.localStorage.getItem(REPORTS_KEY), [])
-    const reports = Array.isArray(existingReports) ? existingReports : []
+  if (!selectedDocument) return
 
-    const newReport = {
-      id: Date.now(),
-      contentType: 'document',
-      contentId: selectedDocument.id,
-      reason: reportReason,
-      description: reportDescription.trim(),
-      reportedBy: user?.nom || 'Étudiant',
-      reportedById: user?.id || null,
-      date: new Date().toISOString(),
-      status: 'pending'
-    }
+  setError('')
+  setMessage('')
 
-    window.localStorage.setItem(REPORTS_KEY, JSON.stringify([newReport, ...reports]))
-    setMessage('Signalement envoyé. Merci de nous aider à maintenir la qualité de la plateforme.')
+  try {
+    await documentAPI.reportDocument(
+      token,
+      selectedDocument.id,
+      {
+        reason: reportReason,
+        description: reportDescription.trim()
+      }
+    )
+
+    const adminUsers = getStoredUsers().filter(
+  storedUser => storedUser.role === 'admin'
+)
+
+queueNotifications(
+  adminUsers
+    .filter(
+      adminUser =>
+        Number(adminUser.id) !== Number(user?.id)
+    )
+    .map(adminUser =>
+      createNotification({
+        id: `document-report-${selectedDocument.id}-${Date.now()}-${adminUser.id}`,
+        userId: adminUser.id,
+        title: 'Nouveau signalement',
+        message: `${
+          user?.nom ||
+          user?.firstName ||
+          user?.first_name ||
+          'Un étudiant'
+        } a signalé le document « ${selectedDocument.title} » pour la raison : ${reportReason}.`,
+        type: 'report'
+      })
+    )
+)
+
+    setMessage(
+      'Signalement envoyé. Merci de nous aider à maintenir la qualité de la plateforme.'
+    )
+
     closeReportModal()
+  } catch (error) {
+    console.error('Erreur envoi signalement :', error)
+
+    setError(
+      error.message || 'Impossible d’envoyer le signalement.'
+    )
   }
+}
 
   return (
     <Container className="py-4 documents-page">
@@ -750,11 +1165,29 @@ export default function Documents() {
                 </Form.Group>
               </Col>
               <Col md={2}>
-                <Form.Group>
-                  <Form.Label>Cours</Form.Label>
-                  <Form.Control name="course" value={form.course} onChange={handleFormChange} />
-                </Form.Group>
-              </Col>
+  <Form.Group>
+    <Form.Label>Cours</Form.Label>
+
+    <Form.Select
+      name="course"
+      value={form.course}
+      onChange={handleFormChange}
+      disabled={availableCourses.length === 0}
+    >
+      <option value="">
+        {availableCourses.length > 0
+          ? 'Choisir un cours'
+          : 'Aucun cours configuré'}
+      </option>
+
+      {availableCourses.map((course) => (
+        <option key={course} value={course}>
+          {course}
+        </option>
+      ))}
+    </Form.Select>
+  </Form.Group>
+</Col>
               <Col md={3}>
                 <Form.Group>
                   <Form.Label>Catégorie</Form.Label>
@@ -787,22 +1220,56 @@ export default function Documents() {
       </Card>
 
       <div className="d-flex flex-wrap gap-2 align-items-center my-3">
-        <ButtonGroup>
-          <Button
-            variant={filterMode === 'general' ? 'primary' : 'outline-primary'}
-            onClick={() => setFilterMode('general')}
-          >
-            Général
-          </Button>
-          <Button
-            variant={filterMode === 'program' ? 'primary' : 'outline-primary'}
-            onClick={() => setFilterMode('program')}
-            disabled={!programme}
-          >
-            Mon programme
-          </Button>
-        </ButtonGroup>
-        <Form className="ms-auto documents-search-form" style={{ minWidth: '260px' }}>
+  <ButtonGroup>
+    <Button
+      variant={
+        filterMode === 'general'
+          ? 'primary'
+          : 'outline-primary'
+      }
+      onClick={() => setFilterMode('general')}
+    >
+      Général
+    </Button>
+
+    <Button
+      variant={
+        filterMode === 'program'
+          ? 'primary'
+          : 'outline-primary'
+      }
+      onClick={() => setFilterMode('program')}
+      disabled={!programme}
+    >
+      Mon programme
+    </Button>
+  </ButtonGroup>
+
+  <Form.Select
+    value={sortMode}
+    onChange={(event) => setSortMode(event.target.value)}
+    aria-label="Trier les documents"
+    style={{
+      width: '210px',
+      maxWidth: '100%'
+    }}
+  >
+    <option value="recent">Plus récents</option>
+    <option value="rating">Mieux notés</option>
+    <option value="downloads">Plus téléchargés</option>
+    <option value="alphabetical">Ordre alphabétique</option>
+  </Form.Select>
+
+  <Form
+    className="ms-auto documents-search-form"
+    style={{ minWidth: '260px' }}
+  >
+
+  </Form>
+  <Form
+    className="ms-auto documents-search-form"
+    style={{ minWidth: '260px' }}
+  >
           <div className="documents-search-actions">
             <Form.Control
               placeholder="Rechercher un document..."
@@ -831,16 +1298,34 @@ export default function Documents() {
         </Alert>
       )}
 
-      <Row className="g-3">
-        {Object.entries(groupedDocuments).map(([section, sectionDocs]) => (
-          <Col md={6} key={section}>
-            <Card className="card-hover h-100">
-              <Card.Body>
-                <Card.Title>{section}</Card.Title>
-                <small className="text-muted">{sectionDocs.length} document(s)</small>
+      <Accordion
+  alwaysOpen
+  className="documents-course-accordion"
+>
+  {Object.entries(groupedDocuments).map(
+    ([course, courseDocs], index) => (
+      <Accordion.Item
+        eventKey={String(index)}
+        key={course}
+        className="mb-3"
+      >
+        <Accordion.Header>
+          <span className="fw-semibold">
+            📘 {course}
+          </span>
 
-                <div className="mt-3 d-grid gap-2">
-                  {sectionDocs.map((doc) => {
+          <Badge
+            bg="secondary"
+            className="ms-2"
+          >
+            {courseDocs.length}
+          </Badge>
+        </Accordion.Header>
+
+        <Accordion.Body>
+          <div className="d-grid gap-2">
+            {courseDocs.map((doc) => {
+                    const typeInfo = getTypeIcon(doc.fileType)
                     const ratings = getDocumentRatings(doc)
                     const averageRating = ratings.length
                       ? ratings.reduce((sum, item) => sum + Number(item.rating || 0), 0) / ratings.length
@@ -849,50 +1334,151 @@ export default function Documents() {
                     const averageLabel = ratings.length ? `${averageRating.toFixed(1)}/5` : '0.0/5'
 
                     return (
-                    <div key={doc.id} className="document-item border rounded p-2 bg-light">
-                      <div className="d-flex align-items-center justify-content-between gap-2">
-                        <div className="d-flex align-items-center gap-2">
-                          <Badge bg="secondary">{getTypeIcon(doc.fileType)}</Badge>
-                          <div>
-                            <div className="fw-semibold">{doc.title}</div>
-                            <small className="text-muted document-file-meta">{doc.course} · {doc.fileName || 'Sans fichier'}</small>
-                          </div>
-                        </div>
-                        <div className="d-flex gap-2 flex-wrap justify-content-end">
-                          <Button size="sm" variant="outline-primary" onClick={() => handleView(doc)} disabled={!doc.fileUrl}>
-                            Voir
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="outline-secondary"
-                            onClick={() => handleDownload(doc)}
-                            disabled={!doc.fileUrl}
-                          >
-                            Télécharger
-                          </Button>
-                          <Button size="sm" variant="outline-danger" onClick={() => openReportModal(doc)}>
-                            Signaler
-                          </Button>
-                        </div>
-                      </div>
+                    <div
+  key={doc.id}
+  className="document-item document-card-modern"
+>
+  <div className="document-card-modern__header">
+    <div className="document-card-modern__identity">
+      <div
+        className="document-type-icon"
+        style={{
+          backgroundColor: typeInfo.background
+        }}
+        title={typeInfo.label}
+        aria-label={typeInfo.label}
+      >
+        <span className="document-type-icon__emoji">
+          {typeInfo.icon}
+        </span>
 
-                      <div className="d-flex flex-wrap align-items-center gap-2 mt-2">
-                        <span className="text-muted small">Note:</span>
-                        {[1, 2, 3, 4, 5].map((ratingValue) => (
-                          <Button
-                            key={ratingValue}
-                            size="sm"
-                            variant={averageRating >= ratingValue ? 'warning' : 'outline-warning'}
-                            onClick={() => handleRateDocument(doc, ratingValue)}
-                            disabled={Boolean(getDocumentRatings(doc).some((item) => item.userId === user?.id))}
-                          >
-                            {ratingValue}
-                          </Button>
-                        ))}
-                        <span className="text-muted small">{renderRatingStars(ratings)} {averageLabel}</span>
-                        <span className="text-muted small">{ratings.length} évaluation(s)</span>
-                        <span className="text-muted small">Téléchargements: {doc.downloadCount || 0}</span>
-                      </div>
+        <span className="document-type-icon__label">
+          {typeInfo.label}
+        </span>
+      </div>
+
+      <div className="document-card-modern__information">
+        <div className="document-card-modern__title-row">
+          <div className="document-card-modern__title">
+            {doc.title}
+          </div>
+
+          {Date.now() - new Date(doc.date || 0).getTime() <=
+            7 * 24 * 60 * 60 * 1000 && (
+            <Badge bg="success">
+              Nouveau
+            </Badge>
+          )}
+        </div>
+
+        <div className="document-card-modern__file">
+          {doc.fileName || 'Sans fichier'}
+        </div>
+
+        <div className="document-card-modern__author">
+          <span className="document-card-modern__avatar">
+            {String(doc.author || 'E')
+              .trim()
+              .charAt(0)
+              .toUpperCase()}
+          </span>
+
+          <span>
+            {doc.author || 'Étudiant'}
+          </span>
+
+          <span aria-hidden="true">•</span>
+
+          <span>
+            {doc.date || '-'}
+          </span>
+        </div>
+      </div>
+    </div>
+
+    <div className="document-card-modern__actions">
+      <Button
+        size="sm"
+        variant="outline-primary"
+        onClick={() => handleView(doc)}
+        disabled={!doc.fileUrl}
+        title="Voir le document"
+      >
+        👁 Voir
+      </Button>
+
+      <Button
+        size="sm"
+        variant="outline-secondary"
+        onClick={() => handleDownload(doc)}
+        disabled={!doc.fileUrl}
+        title="Télécharger le document"
+      >
+        ⬇ Télécharger
+      </Button>
+
+{(isAdmin || doc.authorId === user?.id) && (
+  <Button
+    size="sm"
+    variant="outline-danger"
+    onClick={() => handleDeleteDocument(doc.id)}
+    title="Supprimer le document"
+  >
+    🗑 Supprimer
+  </Button>
+)}
+
+      <Button
+        size="sm"
+        variant="outline-danger"
+        onClick={() => openReportModal(doc)}
+        title="Signaler le document"
+      >
+        🚩
+      </Button>
+    </div>
+  </div>
+                        
+
+                      <div className="d-flex flex-wrap align-items-center justify-content-between mt-2">
+
+  <div className="d-flex align-items-center gap-2">
+    <span
+      style={{
+        color: "#ffc107",
+        fontSize: "20px",
+        cursor: "pointer",
+        letterSpacing: "2px"
+      }}
+    >
+      {[1, 2, 3, 4, 5].map((ratingValue) => (
+        <span
+          key={ratingValue}
+          onClick={() => handleRateDocument(doc, ratingValue)}
+          style={{
+            opacity: averageRating >= ratingValue ? 1 : 0.35,
+            pointerEvents: getDocumentRatings(doc).some(
+              (item) => item.userId === user?.id
+            )
+              ? "none"
+              : "auto"
+          }}
+        >
+          ★
+        </span>
+      ))}
+    </span>
+
+    <small className="text-muted">
+      {averageLabel} ({ratings.length})
+    </small>
+  </div>
+
+  <small className="text-muted">
+    ⬇ {doc.downloadCount || 0}
+  </small>
+
+</div>
 
                       <div className="d-flex flex-wrap align-items-center gap-2 mt-2">
                         <Button
@@ -971,18 +1557,15 @@ export default function Documents() {
                         <img src={doc.fileUrl} alt={doc.title} className="document-image-preview mt-2" />
                       )}
 
-                      <div className="text-muted small mt-2">
-                        Ajouté par {doc.author || 'Étudiant'} le {doc.date || '-'}
-                      </div>
                     </div>
                     )
                   })}
-                </div>
-              </Card.Body>
-            </Card>
-          </Col>
-        ))}
-      </Row>
+                          </div>
+        </Accordion.Body>
+      </Accordion.Item>
+    )
+  )}
+</Accordion>
 
       <Modal show={reportModalOpen} onHide={closeReportModal} centered>
         <Modal.Header closeButton>

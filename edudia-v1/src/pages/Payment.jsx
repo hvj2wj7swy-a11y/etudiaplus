@@ -1,7 +1,8 @@
 import React from 'react'
 import { Container, Row, Col, Card, Button, Alert } from 'react-bootstrap'
-import { Link, Navigate, useNavigate, useSearchParams } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext.jsx'
+import { subscriptionApi } from '../services/api'
 
 const PLAN_DETAILS = {
   monthly: { label: 'Mensuel', price: '9,99 $ CAD / mois' },
@@ -11,8 +12,7 @@ const PLAN_DETAILS = {
 export default function Payment() {
   const [searchParams] = useSearchParams()
   const plan = searchParams.get('plan') === 'annual' ? 'annual' : 'monthly'
-  const { user, activateSubscription } = useAuth()
-  const navigate = useNavigate()
+  const { user } = useAuth()
 
   if (!user) return <Navigate to="/login" replace />
   if (user.role === 'admin') return <Navigate to="/tools" replace />
@@ -21,9 +21,32 @@ export default function Payment() {
   }
 
   const confirmPayment = async () => {
-    const result = await activateSubscription(plan)
-    if (result?.success) navigate('/documents', { replace: true })
+  try {
+    const token =
+      window.localStorage.getItem('edudia_auth_token')
+
+    const result =
+      await subscriptionApi.createCheckoutSession(
+        token,
+        { plan }
+      )
+
+    if (result?.data?.url) {
+      window.location.href = result.data.url
+      return
+    }
+
+    console.error(
+      'Aucune URL Stripe reçue :',
+      result
+    )
+  } catch (error) {
+    console.error(
+      'Erreur paiement Stripe :',
+      error
+    )
   }
+}
 
   const selectedPlan = PLAN_DETAILS[plan]
 

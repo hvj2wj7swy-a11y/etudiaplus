@@ -1,50 +1,23 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { Container, Row, Col, Card, Form, Button, Alert, Modal } from 'react-bootstrap'
 import './Agenda.css'
+import { agendaAPI } from '../services/api.js'
+import { useAuth } from '../context/AuthContext.jsx'
 
-const WEEK_DAYS = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi']
-const EVENTS_STORAGE_KEY = 'edudia_agenda_events'
-const USERS_KEY = 'edudia_users'
-const NOTIFICATIONS_KEY = 'edudia_notifications'
-const NOTIFICATION_EVENT = 'edudia-notifications-updated'
-const START_HOUR = 8
+const WEEK_DAYS = [
+  'Lundi',
+  'Mardi',
+  'Mercredi',
+  'Jeudi',
+  'Vendredi',
+  'Samedi',
+  'Dimanche'
+]
+const START_HOUR = 6
 const END_HOUR = 22
 const HOUR_HEIGHT = 60
 const WEEK_VIEW_HEIGHT = (END_HOUR - START_HOUR) * HOUR_HEIGHT
 const DAY_WIDTH_PERCENT = 100 / WEEK_DAYS.length
-
-const initialEvents = [
-  {
-    id: 1,
-    title: 'Cours de maths',
-    type: 'cours',
-    date: '2026-06-22',
-    startTime: '09:00',
-    endTime: '10:30',
-    course: 'Mathématiques',
-    description: 'Chapitre 4'
-  },
-  {
-    id: 2,
-    title: 'Devoir de français',
-    type: 'devoir',
-    date: '2026-06-24',
-    startTime: '18:00',
-    endTime: '19:00',
-    course: 'Français',
-    description: 'Rédaction finale'
-  },
-  {
-    id: 3,
-    title: 'Examen de physique',
-    type: 'examen',
-    date: '2026-06-26',
-    startTime: '14:00',
-    endTime: '16:00',
-    course: 'Physique',
-    description: 'Chapitres 1 à 6'
-  }
-]
 
 const typeColors = {
   cours: '#dbeafe',
@@ -74,75 +47,11 @@ const dateKeyToLocalDate = (dateKey) => {
 
 const isWeekdayDateKey = (dateKey) => {
   const index = getWeekdayIndex(dateKeyToLocalDate(dateKey))
-  return index >= 0 && index <= 4
+  return index >= 0 && index <= 6
 }
 
 const getNextWeekdayDateKey = (fromDate = new Date()) => {
-  const next = new Date(fromDate)
-  const index = getWeekdayIndex(next)
-  if (index > 4) {
-    next.setDate(next.getDate() + (7 - index))
-  }
-  return toDateKey(next)
-}
-
-const safeParse = (value, fallback) => {
-  try {
-    return value ? JSON.parse(value) : fallback
-  } catch {
-    return fallback
-  }
-}
-
-const dispatchNotificationUpdate = () => {
-  window.dispatchEvent(new Event(NOTIFICATION_EVENT))
-}
-
-const normalizeNotification = (notification) => ({
-  id: notification.id,
-  userId: notification.userId,
-  title: notification.title,
-  message: notification.message,
-  type: notification.type || 'info',
-  isRead: Boolean(notification.isRead),
-  createdAt: notification.createdAt || new Date().toISOString()
-})
-
-const readNotifications = () => {
-  const stored = safeParse(window.localStorage.getItem(NOTIFICATIONS_KEY), [])
-  return Array.isArray(stored) ? stored.map(normalizeNotification) : []
-}
-
-const saveNotifications = (notifications) => {
-  window.localStorage.setItem(NOTIFICATIONS_KEY, JSON.stringify(notifications))
-}
-
-const queueNotifications = (items) => {
-  if (!items.length) return
-
-  const existing = readNotifications()
-  const nextNotifications = [
-    ...items.filter((item) => !existing.some((notification) => notification.id === item.id)),
-    ...existing
-  ]
-
-  saveNotifications(nextNotifications)
-  dispatchNotificationUpdate()
-}
-
-const createNotification = ({ id, userId, title, message, type }) => ({
-  id,
-  userId,
-  title,
-  message,
-  type,
-  isRead: false,
-  createdAt: new Date().toISOString()
-})
-
-const getStoredUsers = () => {
-  const stored = safeParse(window.localStorage.getItem(USERS_KEY), [])
-  return Array.isArray(stored) ? stored : []
+  return toDateKey(new Date(fromDate))
 }
 
 const formatMonthTitle = (date) => {
@@ -152,7 +61,7 @@ const formatMonthTitle = (date) => {
 
 const formatWeekTitle = (startDate) => {
   const endDate = new Date(startDate)
-  endDate.setDate(endDate.getDate() + 4)
+  endDate.setDate(endDate.getDate() + 6)
   const format = new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'long' })
   return `${format.format(startDate)} - ${format.format(endDate)}`
 }
@@ -270,10 +179,12 @@ const groupOverlappingEvents = (events) => {
 }
 
 export default function Agenda() {
-  const [events, setEvents] = useState(() => {
-    const stored = safeParse(window.localStorage.getItem(EVENTS_STORAGE_KEY), null)
-    return Array.isArray(stored) ? stored : initialEvents
-  })
+  const [events, setEvents] = useState([])
+const [agendaLoading, setAgendaLoading] = useState(true)
+  const { user } = useAuth()
+
+const token =
+  localStorage.getItem('edudia_auth_token')
   const [viewMode, setViewMode] = useState('week')
   const [cursorDate, setCursorDate] = useState(new Date())
   const [currentTime, setCurrentTime] = useState(new Date())
@@ -285,10 +196,83 @@ export default function Agenda() {
     startTime: '08:00',
     endTime: '09:00',
     course: '',
-    description: ''
+room: '',
+description: '',
+    recurrenceType: 'none',
+recurrenceEndDate: '',
+reminderMinutes: '',
+reminderMinutesList: [],
+priority: 'normal',
+status: 'todo',
+color: '#dbeafe'
   })
   const [formError, setFormError] = useState('')
   const [selectedEvent, setSelectedEvent] = useState(null)
+  const [editingEventId, setEditingEventId] = useState(null)
+  const normalizeAgendaEvent = (event) => ({
+  id: event.id,
+  title: event.title,
+  type: event.type,
+  date: String(event.event_date).slice(0, 10),
+  startTime: String(event.start_time).slice(0, 5),
+  endTime: String(event.end_time).slice(0, 5),
+  course: event.course || '',
+room: event.room || '',
+description: event.description || '',
+  color: event.color || null,
+  priority:
+  event.priority || 'normal',
+  status:
+  event.status || 'todo',
+
+  recurrenceType:
+    event.recurrence_type || 'none',
+
+  recurrenceEndDate:
+    event.recurrence_end_date
+      ? String(event.recurrence_end_date).slice(0, 10)
+      : '',
+
+  reminderMinutes:
+  event.reminder_minutes ?? '',
+
+  reminderMinutesList:
+event.reminder_minutes_list || [],
+})
+
+const loadAgendaEvents = async () => {
+  if (!token) {
+    setEvents([])
+    setAgendaLoading(false)
+    return
+  }
+
+  try {
+    setAgendaLoading(true)
+
+    const response =
+      await agendaAPI.list(token)
+
+    const rawEvents =
+      response?.data?.events || []
+
+    setEvents(
+      rawEvents.map(normalizeAgendaEvent)
+    )
+  } catch (error) {
+    console.error(
+      'Erreur chargement agenda PostgreSQL:',
+      error
+    )
+
+    setFormError(
+      error.message ||
+        "Impossible de charger l'agenda."
+    )
+  } finally {
+    setAgendaLoading(false)
+  }
+}
   const formRef = useRef(null)
 
   useEffect(() => {
@@ -297,37 +281,8 @@ export default function Agenda() {
   }, [])
 
   useEffect(() => {
-    window.localStorage.setItem(EVENTS_STORAGE_KEY, JSON.stringify(events))
-  }, [events])
-
-  useEffect(() => {
-    const nowTimestamp = currentTime.getTime()
-    const reminderThreshold = 24 * 60 * 60 * 1000
-    const students = getStoredUsers().filter((storedUser) => storedUser.role !== 'admin')
-
-    const reminders = []
-
-    events.forEach((event) => {
-      if (!event.date || !event.startTime) return
-      const eventStart = new Date(`${event.date}T${event.startTime}:00`)
-      const delta = eventStart.getTime() - nowTimestamp
-      if (delta < 0 || delta > reminderThreshold) return
-
-      students.forEach((student) => {
-        reminders.push(
-          createNotification({
-            id: `agenda-${event.id}-${student.id}`,
-            userId: student.id,
-            title: 'Événement d’agenda bientôt',
-            message: `${event.title} commence le ${event.date} à ${event.startTime}.`,
-            type: 'agenda'
-          })
-        )
-      })
-    })
-
-    queueNotifications(reminders)
-  }, [events, currentTime])
+  loadAgendaEvents()
+}, [token, user?.id])
 
   const weekStart = getMonday(cursorDate)
   const monthStart = new Date(cursorDate.getFullYear(), cursorDate.getMonth(), 1)
@@ -345,7 +300,7 @@ export default function Agenda() {
   const nextLabel = viewMode === 'week' ? 'Semaine prochaine' : 'Mois suivant'
 
   const weekStartKey = toDateKey(weekStart)
-  const weekEnd = addDays(weekStart, 4)
+  const weekEnd = addDays(weekStart, 6)
   const weekEndKey = toDateKey(weekEnd)
 
   const weekEvents = useMemo(() => {
@@ -365,10 +320,49 @@ export default function Agenda() {
     [events, selectedMonthDate]
   )
 
-  const upcomingEvents = useMemo(
-    () => events.filter((event) => event.type === 'devoir' || event.type === 'examen').slice(0, 5),
-    [events]
-  )
+  const upcomingEvents = useMemo(() => {
+  const todayKey = toDateKey(new Date())
+  const weekEndKey = toDateKey(addDays(new Date(), 7))
+
+  const priorityRank = {
+    urgent: 0,
+    important: 1,
+    normal: 2,
+    low: 3
+  }
+
+  return events
+    .filter((event) => {
+      if (
+        event.type !== 'devoir' &&
+        event.type !== 'examen'
+      ) {
+        return false
+      }
+
+      if (
+        event.status === 'completed' ||
+        event.status === 'cancelled'
+      ) {
+        return false
+      }
+
+      return (
+        event.date >= todayKey &&
+        event.date <= weekEndKey
+      )
+    })
+    .sort((a, b) => {
+      if (a.date !== b.date) {
+        return a.date.localeCompare(b.date)
+      }
+
+      return (
+        (priorityRank[a.priority] ?? 2) -
+        (priorityRank[b.priority] ?? 2)
+      )
+    })
+}, [events])
 
   const selectedMonthLabel = new Intl.DateTimeFormat('fr-FR', {
     weekday: 'long',
@@ -382,43 +376,140 @@ export default function Agenda() {
     setForm((previous) => ({ ...previous, [name]: value }))
   }
 
-  const handleAddEvent = (event) => {
-    event.preventDefault()
-    setFormError('')
+  const handleAddEvent = async (event) => {
+  event.preventDefault()
+  setFormError('')
 
-    if (!form.title || !form.date || !form.startTime || !form.endTime) {
-      setFormError('Remplis le titre, la date, l\'heure de début et l\'heure de fin.')
-      return
-    }
-    if (!isWeekdayDateKey(form.date)) {
-      setFormError('Choisis une date entre lundi et vendredi pour la vue semaine.')
-      return
-    }
-    if (parseTimeToMinutes(form.endTime) <= parseTimeToMinutes(form.startTime)) {
-      setFormError('L\'heure de fin doit être après l\'heure de début.')
-      return
-    }
+  if (
+    !form.title ||
+    !form.date ||
+    !form.startTime ||
+    !form.endTime
+  ) {
+    setFormError(
+      "Remplis le titre, la date, l'heure de début et l'heure de fin."
+    )
+    return
+  }
 
-    const newEvent = {
-      id: Date.now() + Math.floor(Math.random() * 1000),
+  if (!isWeekdayDateKey(form.date)) {
+    setFormError(
+      'Choisis une date entre lundi et vendredi pour la vue semaine.'
+    )
+    return
+  }
+
+  if (
+    parseTimeToMinutes(form.endTime) <=
+    parseTimeToMinutes(form.startTime)
+  ) {
+    setFormError(
+      "L'heure de fin doit être après l'heure de début."
+    )
+    return
+  }
+
+  if (
+    form.recurrenceType !== 'none' &&
+    !form.recurrenceEndDate
+  ) {
+    setFormError(
+      'Choisis une date de fin pour la répétition.'
+    )
+    return
+  }
+
+  if (!token) {
+    setFormError(
+      'Session expirée. Reconnecte-toi.'
+    )
+    return
+  }
+
+  try {
+    const payload = {
       title: form.title,
       type: form.type,
       date: form.date,
       startTime: form.startTime,
       endTime: form.endTime,
       course: form.course,
-      description: form.description
+room: form.room,
+description: form.description,
+      color: form.color,
+      priority: form.priority,
+      status: form.status,
+      recurrenceType: form.recurrenceType,
+      recurrenceEndDate:
+        form.recurrenceType === 'none'
+          ? null
+          : form.recurrenceEndDate,
+          reminderMinutes:
+form.reminderMinutes === ''
+? null
+: Number(form.reminderMinutes),
+
+reminderMinutesList:
+form.reminderMinutesList,
     }
 
-    console.log('new event created', newEvent)
-    setEvents((previous) => {
-      const next = [...previous, newEvent]
-      window.localStorage.setItem(EVENTS_STORAGE_KEY, JSON.stringify(next))
-      console.log('events after add', next)
-      return next
-    })
+    const response = editingEventId
+      ? await agendaAPI.update(
+          token,
+          editingEventId,
+          payload
+        )
+      : await agendaAPI.create(
+          token,
+          payload
+        )
 
-    const eventDate = dateKeyToLocalDate(form.date)
+    if (editingEventId) {
+      const updated =
+        response?.data?.event
+
+      if (!updated?.id) {
+        throw new Error(
+          "L'événement n'a pas été modifié."
+        )
+      }
+
+      const normalizedUpdated =
+        normalizeAgendaEvent(updated)
+
+      setEvents((previous) =>
+        previous.map((eventItem) =>
+          eventItem.id === editingEventId
+            ? normalizedUpdated
+            : eventItem
+        )
+      )
+
+      setEditingEventId(null)
+    } else {
+      const createdEvents =
+        response?.data?.events || []
+
+      if (!createdEvents.length) {
+        throw new Error(
+          'Aucun événement créé.'
+        )
+      }
+
+      const normalizedEvents =
+        createdEvents.map(
+          normalizeAgendaEvent
+        )
+
+      setEvents((previous) => [
+        ...previous,
+        ...normalizedEvents
+      ])
+    }
+
+    const eventDate =
+      dateKeyToLocalDate(form.date)
+
     setCursorDate(eventDate)
     setSelectedMonthDate(eventDate)
     setViewMode('week')
@@ -426,13 +517,33 @@ export default function Agenda() {
     setForm({
       title: '',
       type: 'cours',
-      date: getNextWeekdayDateKey(eventDate),
+      date:
+        getNextWeekdayDateKey(eventDate),
       startTime: '08:00',
       endTime: '09:00',
       course: '',
-      description: ''
+room: '',
+description: '',
+      recurrenceType: 'none',
+      recurrenceEndDate: '',
+reminderMinutes: '',
+reminderMinutesList: [],
+priority: 'normal',
+status: 'todo',
+color: '#dbeafe'
     })
+  } catch (error) {
+    console.error(
+      'Erreur agenda PostgreSQL:',
+      error
+    )
+
+    setFormError(
+      error.message ||
+        "Impossible d'enregistrer l'événement."
+    )
   }
+}
 
   const goToToday = () => {
     const now = new Date()
@@ -450,7 +561,6 @@ export default function Agenda() {
 
   const addFromSelectedDate = () => {
     const weekdayIndex = getWeekdayIndex(selectedMonthDate)
-    if (weekdayIndex > 4) return
     setForm((previous) => ({
       ...previous,
       date: toDateKey(selectedMonthDate)
@@ -466,9 +576,274 @@ export default function Agenda() {
     setSelectedEvent(eventItem)
   }
 
-  const handleCloseEventDetails = () => {
-    setSelectedEvent(null)
+  const handleEditEvent = () => {
+  if (!selectedEvent) return
+
+  setForm({
+    title: selectedEvent.title || '',
+    type: selectedEvent.type || 'cours',
+    date: selectedEvent.date || getTodayDateKey(),
+    startTime: selectedEvent.startTime || '08:00',
+    endTime: selectedEvent.endTime || '09:00',
+    course: selectedEvent.course || '',
+room: selectedEvent.room || '',
+description: selectedEvent.description || '',
+recurrenceType:
+  selectedEvent.recurrenceType || 'none',
+recurrenceEndDate:
+  selectedEvent.recurrenceEndDate || '',
+
+reminderMinutes:
+  selectedEvent.reminderMinutes ?? '',
+
+  reminderMinutesList:
+selectedEvent.reminderMinutesList || [],
+
+  priority:
+selectedEvent.priority || 'normal',
+
+status:
+  selectedEvent.status || 'todo',
+
+color:
+  selectedEvent.color || '#dbeafe'
+  })
+
+  setEditingEventId(selectedEvent.id)
+  setSelectedEvent(null)
+  setFormError('')
+
+  window.setTimeout(() => {
+    formRef.current?.scrollIntoView({
+      behavior: 'smooth',
+      block: 'start'
+    })
+  }, 100)
+}
+
+const handleMarkCompleted = async () => {
+  if (!selectedEvent || !token) return
+
+  try {
+    const payload = {
+      title: selectedEvent.title,
+      type: selectedEvent.type,
+      date: selectedEvent.date,
+      startTime: selectedEvent.startTime,
+      endTime: selectedEvent.endTime,
+      course: selectedEvent.course || '',
+      room: selectedEvent.room || '',
+      description: selectedEvent.description || '',
+      color: selectedEvent.color || null,
+      priority: selectedEvent.priority || 'normal',
+      status: 'completed',
+      recurrenceType:
+        selectedEvent.recurrenceType || 'none',
+      recurrenceEndDate:
+        selectedEvent.recurrenceEndDate || null,
+      reminderMinutes:
+        selectedEvent.reminderMinutes === ''
+          ? null
+          : selectedEvent.reminderMinutes,
+      reminderMinutesList:
+        selectedEvent.reminderMinutesList || []
+    }
+
+    const response = await agendaAPI.update(
+      token,
+      selectedEvent.id,
+      payload
+    )
+
+    const updated = response?.data?.event
+
+    if (!updated?.id) {
+      throw new Error(
+        "Impossible de marquer l'événement comme terminé."
+      )
+    }
+
+    const normalizedUpdated =
+      normalizeAgendaEvent(updated)
+
+    setEvents((previous) =>
+      previous.map((event) =>
+        event.id === selectedEvent.id
+          ? normalizedUpdated
+          : event
+      )
+    )
+
+    setSelectedEvent(normalizedUpdated)
+  } catch (error) {
+    console.error(
+      'Erreur statut agenda:',
+      error
+    )
+
+    window.alert(
+      error.message ||
+      "Impossible de marquer l'événement comme terminé."
+    )
   }
+}
+
+const handleMarkTodo = async () => {
+  if (!selectedEvent || !token) return
+
+  try {
+    const payload = {
+      title: selectedEvent.title,
+      type: selectedEvent.type,
+      date: selectedEvent.date,
+      startTime: selectedEvent.startTime,
+      endTime: selectedEvent.endTime,
+      course: selectedEvent.course || '',
+      room: selectedEvent.room || '',
+      description: selectedEvent.description || '',
+      color: selectedEvent.color || null,
+      priority: selectedEvent.priority || 'normal',
+      status: 'todo',
+      recurrenceType:
+        selectedEvent.recurrenceType || 'none',
+      recurrenceEndDate:
+        selectedEvent.recurrenceEndDate || null,
+      reminderMinutes:
+        selectedEvent.reminderMinutes === ''
+          ? null
+          : selectedEvent.reminderMinutes,
+      reminderMinutesList:
+        selectedEvent.reminderMinutesList || []
+    }
+
+    const response = await agendaAPI.update(
+      token,
+      selectedEvent.id,
+      payload
+    )
+
+    const updated = response?.data?.event
+
+    if (!updated?.id) {
+      throw new Error(
+        "Impossible de remettre l'événement à faire."
+      )
+    }
+
+    const normalizedUpdated =
+      normalizeAgendaEvent(updated)
+
+    setEvents((previous) =>
+      previous.map((event) =>
+        event.id === selectedEvent.id
+          ? normalizedUpdated
+          : event
+      )
+    )
+
+    setSelectedEvent(normalizedUpdated)
+  } catch (error) {
+    console.error(
+      'Erreur statut agenda:',
+      error
+    )
+
+    window.alert(
+      error.message ||
+      "Impossible de remettre l'événement à faire."
+    )
+  }
+}
+
+const handleDeleteEvent = async () => {
+  if (!selectedEvent || !token) return
+
+  try {
+    // Événement non récurrent
+    if (!selectedEvent.recurrenceGroupId) {
+      const confirmed = window.confirm(
+        'Supprimer cet événement ?'
+      )
+
+      if (!confirmed) return
+
+      await agendaAPI.delete(
+        token,
+        selectedEvent.id
+      )
+
+      setEvents((previous) =>
+        previous.filter(
+          (event) =>
+            event.id !== selectedEvent.id
+        )
+      )
+
+      setSelectedEvent(null)
+      return
+    }
+
+    // Événement récurrent
+    const deleteWholeSeries = window.confirm(
+      'Cet événement fait partie d’une série.\n\nOK = supprimer toute la série\nAnnuler = supprimer seulement cette occurrence'
+    )
+
+    if (deleteWholeSeries) {
+      await agendaAPI.deleteSeries(
+        token,
+        selectedEvent.recurrenceGroupId
+      )
+
+      setEvents((previous) =>
+        previous.filter(
+          (event) =>
+            event.recurrenceGroupId !==
+            selectedEvent.recurrenceGroupId
+        )
+      )
+    } else {
+      const confirmSingle = window.confirm(
+        'Supprimer seulement cette occurrence ?'
+      )
+
+      if (!confirmSingle) return
+
+      await agendaAPI.delete(
+        token,
+        selectedEvent.id
+      )
+
+      setEvents((previous) =>
+        previous.filter(
+          (event) =>
+            event.id !== selectedEvent.id
+        )
+      )
+    }
+
+    setSelectedEvent(null)
+
+    if (
+      editingEventId === selectedEvent.id
+    ) {
+      setEditingEventId(null)
+    }
+  } catch (error) {
+    console.error(
+      'Erreur suppression agenda PostgreSQL:',
+      error
+    )
+
+    window.alert(
+      error.message ||
+        "Impossible de supprimer l'événement."
+    )
+  }
+}
+
+const handleCloseEventDetails = () => {
+  setSelectedEvent(null)
+}
 
   return (
     <Container fluid className="py-4 agenda-page-shell">
@@ -524,40 +899,184 @@ export default function Agenda() {
                   </Row>
 
                   <Form.Group className="mb-3">
-                    <Form.Label>Cours associé</Form.Label>
-                    <Form.Control name="course" value={form.course} onChange={handleChange} placeholder="Mathématiques" />
-                  </Form.Group>
+  <Form.Label>Cours associé</Form.Label>
+  <Form.Control
+    name="course"
+    value={form.course}
+    onChange={handleChange}
+    placeholder="Mathématiques"
+  />
+</Form.Group>
 
-                  <Form.Group className="mb-3">
-                    <Form.Label>Description</Form.Label>
-                    <Form.Control
-                      as="textarea"
-                      rows={2}
-                      name="description"
-                      value={form.description}
-                      onChange={handleChange}
-                      placeholder="Détails de l'événement"
-                    />
-                  </Form.Group>
+<Form.Group className="mb-3">
+  <Form.Label>📍 Salle</Form.Label>
 
-                  <Button type="submit" className="w-100">Ajouter</Button>
+  <Form.Control
+    name="room"
+    value={form.room}
+    onChange={handleChange}
+    placeholder="Ex. B-214, Labo 3, En ligne"
+  />
+</Form.Group>
+
+<Form.Group className="mb-3">
+  <Form.Label>Description</Form.Label>
+
+  <Form.Control
+    as="textarea"
+    rows={2}
+    name="description"
+    value={form.description}
+    onChange={handleChange}
+    placeholder="Détails de l'événement"
+  />
+</Form.Group>
+
+<Form.Group className="mb-3">
+  <Form.Label>Répétition</Form.Label>
+
+  <Form.Select
+    name="recurrenceType"
+    value={form.recurrenceType}
+    onChange={handleChange}
+  >
+    <option value="none">Aucune</option>
+    <option value="weekly">Chaque semaine</option>
+    <option value="biweekly">Toutes les 2 semaines</option>
+    <option value="monthly">Chaque mois</option>
+  </Form.Select>
+</Form.Group>
+
+{form.recurrenceType !== 'none' && (
+  <Form.Group className="mb-3">
+    <Form.Label>Fin de la répétition</Form.Label>
+
+    <Form.Control
+      type="date"
+      name="recurrenceEndDate"
+      value={form.recurrenceEndDate}
+      onChange={handleChange}
+      min={form.date}
+    />
+  </Form.Group>
+)}
+<Form.Group className="mb-3">
+  <Form.Label>Rappels</Form.Label>
+
+  {[
+    { value: 10080, label: '1 semaine avant' },
+    { value: 4320, label: '3 jours avant' },
+    { value: 1440, label: '1 jour avant' },
+    { value: 60, label: '1 heure avant' }
+  ].map((item) => (
+    <Form.Check
+      key={item.value}
+      type="checkbox"
+      label={item.label}
+      checked={form.reminderMinutesList.includes(item.value)}
+      onChange={(e) => {
+        if (e.target.checked) {
+          setForm((prev) => ({
+            ...prev,
+            reminderMinutesList: [
+              ...prev.reminderMinutesList,
+              item.value
+            ]
+          }))
+        } else {
+          setForm((prev) => ({
+            ...prev,
+            reminderMinutesList:
+              prev.reminderMinutesList.filter(
+                (v) => v !== item.value
+              )
+          }))
+        }
+      }}
+    />
+  ))}
+</Form.Group>
+
+<Form.Group className="mb-3">
+  <Form.Label>Priorité</Form.Label>
+
+  <Form.Select
+    name="priority"
+    value={form.priority}
+    onChange={handleChange}
+  >
+    <option value="low">🟢 Faible</option>
+    <option value="normal">🔵 Normale</option>
+    <option value="important">🟠 Importante</option>
+    <option value="urgent">🔴 Urgente</option>
+  </Form.Select>
+</Form.Group>
+
+<Form.Group className="mb-3">
+  <Form.Label>Statut</Form.Label>
+
+  <Form.Select
+    name="status"
+    value={form.status}
+    onChange={handleChange}
+  >
+    <option value="todo">⏳ À faire</option>
+    <option value="in_progress">🟡 En cours</option>
+    <option value="completed">✅ Terminé</option>
+    <option value="cancelled">❌ Annulé</option>
+  </Form.Select>
+</Form.Group>
+
+<Form.Group className="mb-3">
+  <Form.Label>Couleur</Form.Label>
+
+  <Form.Control
+    type="color"
+    name="color"
+    value={form.color}
+    onChange={handleChange}
+  />
+</Form.Group>
+
+                  <Button type="submit" className="w-100">
+    {editingEventId ? "Enregistrer" : "Ajouter"}
+</Button>
                 </Form>
               </Card.Body>
             </Card>
 
             <Card className="shadow-sm">
               <Card.Body>
-                <Card.Title>Travaux à venir</Card.Title>
+                <Card.Title>À remettre cette semaine</Card.Title>
                 {upcomingEvents.length === 0 ? (
                   <p className="text-muted mb-0">Aucun devoir ou examen.</p>
                 ) : (
                   <div className="d-grid gap-2">
                     {upcomingEvents.map((event) => (
-                      <div key={event.id} className="agenda-upcoming-item">
-                        <strong>{event.title}</strong>
-                        <div className="text-muted small">{event.date} · {event.startTime}</div>
-                      </div>
-                    ))}
+  <div key={event.id} className="agenda-upcoming-item">
+    <strong>
+      {event.priority === 'urgent'
+        ? '🔴 '
+        : event.priority === 'important'
+          ? '🟠 '
+          : event.priority === 'low'
+            ? '🟢 '
+            : '🔵 '}
+      {event.title}
+    </strong>
+
+<div className="small">
+  {event.status === 'in_progress'
+    ? '🟡 En cours'
+    : '⏳ À faire'}
+</div>
+
+    <div className="text-muted small">
+      {event.date} · {event.startTime}
+      {event.course ? ` · ${event.course}` : ''}
+    </div>
+  </div>
+))}
                   </div>
                 )}
               </Card.Body>
@@ -627,7 +1146,10 @@ export default function Agenda() {
                               height: `${duration}px`,
                               left: `${left}%`,
                               width: `${columnWidth}%`,
-                              background: typeColors[event.type] || typeColors.cours,
+                              background:
+  event.color ||
+  typeColors[event.type] ||
+  typeColors.cours,
                               borderColor: typeBorderColors[event.type] || typeBorderColors.cours
                             }}
                             onClick={() => handleEventClick(event)}
@@ -702,24 +1224,50 @@ export default function Agenda() {
                       size="sm"
                       variant="primary"
                       onClick={addFromSelectedDate}
-                      disabled={getWeekdayIndex(selectedMonthDate) > 4}
+                      disabled={false}
                     >
                       Ajouter à cette journée
                     </Button>
                   </div>
 
                   <div className="agenda-month-selected-list mt-3">
-                    {selectedMonthEvents.length === 0 ? (
-                      <p className="text-muted mb-0">Aucun événement pour cette journée.</p>
-                    ) : (
-                      selectedMonthEvents.map((event) => (
-                        <div key={event.id} className="agenda-month-selected-item">
-                          <strong>{event.title}</strong>
-                          <div className="text-muted small">{event.startTime} - {event.endTime} · {event.course}</div>
-                        </div>
-                      ))
-                    )}
-                  </div>
+  {selectedMonthEvents.length === 0 ? (
+    <p className="text-muted mb-0">
+      Aucun événement pour cette journée.
+    </p>
+  ) : (
+    <>
+      {selectedMonthEvents.map((event) => (
+        <div
+          key={event.id}
+          className="agenda-month-selected-item"
+        >
+          <strong>
+            {event.priority === 'urgent'
+              ? '🔴 '
+              : event.priority === 'important'
+                ? '🟠 '
+                : event.priority === 'low'
+                  ? '🟢 '
+                  : '🔵 '}
+            {event.title}
+          </strong>
+
+<div className="small">
+  {event.status === 'in_progress'
+    ? '🟡 En cours'
+    : '⏳ À faire'}
+</div>
+
+          <div className="text-muted small">
+            {event.date} · {event.startTime}
+            {event.course ? ` · ${event.course}` : ''}
+          </div>
+        </div>
+      ))}
+    </>
+  )}
+</div>
                 </Card.Body>
               </Card>
             </>
@@ -740,13 +1288,77 @@ export default function Agenda() {
               <p className="mb-2"><strong>Heure de début :</strong> {selectedEvent.startTime}</p>
               <p className="mb-2"><strong>Heure de fin :</strong> {selectedEvent.endTime}</p>
               <p className="mb-2"><strong>Cours associé :</strong> {selectedEvent.course || '-'}</p>
+              <p className="mb-2">
+  <strong>📍 Salle :</strong> {selectedEvent.room || '-'}
+</p><p className="mb-2">
+  <strong>Statut :</strong>{' '}
+  {selectedEvent.status === 'completed'
+    ? '✅ Terminé'
+    : selectedEvent.status === 'in_progress'
+      ? '🟡 En cours'
+      : selectedEvent.status === 'cancelled'
+        ? '❌ Annulé'
+        : '⏳ À faire'}
+</p><p className="mb-2">
+  <strong>🔔 Rappels :</strong>{' '}
+  {selectedEvent.reminderMinutesList?.length
+    ? selectedEvent.reminderMinutesList
+        .map((minutes) => {
+          if (minutes === 10080) return '1 semaine avant'
+          if (minutes === 4320) return '3 jours avant'
+          if (minutes === 1440) return '1 jour avant'
+          if (minutes === 60) return '1 heure avant'
+          return `${minutes} minutes avant`
+        })
+        .join(', ')
+    : 'Aucun'}
+</p>
               <p className="mb-0"><strong>Description :</strong> {selectedEvent.description || '-'}</p>
             </div>
           )}
         </Modal.Body>
         <Modal.Footer>
-          <Button variant="secondary" onClick={handleCloseEventDetails}>Fermer</Button>
-        </Modal.Footer>
+
+  <Button
+    variant="danger"
+    onClick={handleDeleteEvent}
+  >
+    Supprimer
+  </Button>
+
+{selectedEvent?.status !== 'completed' && (
+  <Button
+    variant="success"
+    onClick={handleMarkCompleted}
+  >
+    ✅ Marquer terminé
+  </Button>
+)}
+
+{selectedEvent?.status === 'completed' && (
+  <Button
+    variant="outline-secondary"
+    onClick={handleMarkTodo}
+  >
+    ↩️ Remettre à faire
+  </Button>
+)}
+
+  <Button
+    variant="primary"
+    onClick={handleEditEvent}
+  >
+    Modifier
+  </Button>
+
+  <Button
+    variant="secondary"
+    onClick={handleCloseEventDetails}
+  >
+    Fermer
+  </Button>
+
+</Modal.Footer>
       </Modal>
     </Container>
   )

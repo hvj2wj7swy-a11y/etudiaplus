@@ -47,22 +47,47 @@
     min-width: 0;
   }
 
+  /* Agenda semaine : 7 jours */
   .agenda-page-shell .agenda-week-grid {
     overflow-x: auto;
+    overflow-y: hidden;
     border-radius: 1rem;
+    -webkit-overflow-scrolling: touch;
   }
 
   .agenda-page-shell .agenda-week-body {
-    min-width: 780px;
+    min-width: 1050px;
   }
 
+  .agenda-page-shell .agenda-grid-day-header {
+    min-width: 130px;
+    white-space: nowrap;
+  }
+
+  .agenda-page-shell .agenda-day-column {
+    min-width: 130px;
+  }
+
+  .agenda-page-shell .agenda-event-card {
+    min-width: 0;
+  }
+
+  .agenda-page-shell .agenda-event-title,
+  .agenda-page-shell .agenda-event-meta {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* Vue mois */
   .agenda-page-shell .agenda-month-grid {
     overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
   }
 
   .agenda-page-shell .agenda-month-header-row,
   .agenda-page-shell .agenda-month-body {
-    min-width: 760px;
+    min-width: 900px;
   }
 
   .agenda-page-shell .agenda-month-details-card .d-flex {
@@ -74,6 +99,7 @@
     width: 100%;
   }
 }
+
 
 @media (max-width: 575.98px) {
   .agenda-page-shell .agenda-main-heading {
@@ -91,4 +117,38 @@
   .agenda-page-shell .agenda-toolbar-title {
     white-space: normal;
   }
+
+  /* Sur téléphone : colonnes assez larges pour rester lisibles */
+  .agenda-page-shell .agenda-week-body {
+    min-width: 980px;
+  }
+
+  .agenda-page-shell .agenda-grid-day-header {
+    min-width: 120px;
+  }
+
+  .agenda-page-shell .agenda-day-column {
+    min-width: 120px;
+  }
+
+  .agenda-page-shell .agenda-event-title {
+    font-size: 0.78rem;
+  }
+
+  .agenda-page-shell .agenda-event-meta {
+    font-size: 0.68rem;
+  }
+
+  .agenda-page-shell .agenda-month-header-row,
+  .agenda-page-shell .agenda-month-body {
+    min-width: 840px;
+  }
+
+  .agenda-week-grid {
+  overflow-x: auto;
+}
+
+.agenda-week-body {
+  min-width: 1100px;
+}
 }

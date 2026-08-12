@@ -53,7 +53,9 @@ export const userAPI = {
   getProfile: () => api.get('/users/profile'),
   updateProfile: (data) => api.put('/users/profile', data),
   getTopContributors: (limit = 10) => api.get(`/users/top-contributors?limit=${limit}`),
-  getPublicProfile: (userId) => api.get(`/users/${userId}/public`)
+  getPublicProfile: (userId) => api.get(`/users/${userId}/public`),
+  updateUserRole: (userId, role) =>
+  api.patch(`/users/${userId}/role`, { role })
 };
 
 // ==================== DOCUMENTS ====================

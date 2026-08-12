@@ -31,3 +31,12 @@
     align-items: stretch;
   }
 }
+.admin-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.admin-tabs .btn {
+    border-radius: 12px;
+}

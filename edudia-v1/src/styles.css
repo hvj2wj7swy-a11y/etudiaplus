@@ -2699,7 +2699,7 @@ textarea.form-control::placeholder {
 }
 
 /* Tablette */
-@media (min-width: 576px) and (max-width: 991.98px) {
+@media (min-width: 576px) and (max-width: 1366px) {
   .navigation-shell .notifications-panel {
     width: 400px;
     max-width: calc(100vw - 2rem);

@@ -254,7 +254,7 @@ const createTestNotification = async () => {
 
             {showNotifications && (
               <Card
-  className="notifications-panel position-absolute start-0 mt-2 shadow"
+  className="notifications-panel position-absolute end-0 mt-2 shadow"
   style={{
     zIndex: 1060,
     maxHeight: '70vh',

@@ -218,3 +218,81 @@
     font-size: 0.72rem;
   }
 }
+/* ========================================
+   AGENDA - TABLETTE
+   7 jours visibles sans défilement horizontal
+   ======================================== */
+
+@media (min-width: 768px) and (max-width: 1023.98px) {
+  .agenda-page-shell .agenda-week-grid {
+    width: 100%;
+    min-width: 0 !important;
+    overflow-x: hidden !important;
+    display: grid;
+    grid-template-columns: 58px repeat(7, minmax(0, 1fr));
+    grid-template-rows: auto 960px;
+  }
+
+  .agenda-page-shell .agenda-week-body {
+    width: 100%;
+    min-width: 0 !important;
+    display: grid;
+    grid-template-columns: 58px repeat(7, minmax(0, 1fr));
+    height: 960px;
+  }
+
+  .agenda-page-shell .agenda-grid-corner {
+    grid-column: 1;
+  }
+
+  .agenda-page-shell .agenda-grid-day-header {
+    min-width: 0 !important;
+    width: auto;
+    padding: 0.65rem 0.2rem;
+    font-size: 0.78rem;
+    white-space: nowrap;
+  }
+
+  .agenda-page-shell .agenda-time-axis {
+    width: 58px;
+  }
+
+  .agenda-page-shell .agenda-time-label {
+    right: 0.4rem;
+    font-size: 0.7rem;
+  }
+
+  .agenda-page-shell .agenda-day-column {
+    min-width: 0 !important;
+    width: auto;
+    height: 960px;
+  }
+
+  .agenda-page-shell .agenda-event-card {
+    min-width: 0 !important;
+    padding: 0.35rem 0.3rem;
+  }
+
+  .agenda-page-shell .agenda-event-title {
+    font-size: 0.72rem;
+  }
+
+  .agenda-page-shell .agenda-event-meta {
+    font-size: 0.62rem;
+  }
+
+  .agenda-page-shell .agenda-toolbar-actions {
+    width: 100%;
+  }
+
+  .agenda-page-shell .agenda-toolbar-nav,
+  .agenda-page-shell .agenda-toolbar-toggle {
+    width: 100%;
+  }
+
+  .agenda-page-shell .agenda-toolbar-nav .btn,
+  .agenda-page-shell .agenda-toolbar-toggle .btn {
+    min-width: 0;
+    white-space: nowrap;
+  }
+}

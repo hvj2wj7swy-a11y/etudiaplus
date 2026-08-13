@@ -2737,19 +2737,36 @@ textarea.form-control::placeholder {
     overflow-wrap: anywhere;
   }
 }
-/* Notifications - tablette en paysage */
+/* Notifications - tablette paysage */
 @media (min-width: 992px) and (max-width: 1366px) {
   .navigation-shell .notifications-panel {
-    width: 520px;
-    max-width: calc(100vw - 3rem);
+    position: fixed !important;
+
+    top: 72px !important;
+    left: auto !important;
+    right: 16px !important;
+
+    width: 520px !important;
+    max-width: calc(100vw - 32px) !important;
+
+    margin-top: 0 !important;
+
+    max-height: calc(100dvh - 88px);
+    overflow-y: auto;
+    overflow-x: hidden;
+
+    border-radius: 16px;
   }
 
   .navigation-shell .notifications-panel .card-body {
+    width: 100%;
     padding: 1.25rem;
   }
 
   .navigation-shell .notifications-panel .alert {
     width: 100%;
+    margin-left: 0;
+    margin-right: 0;
     white-space: normal;
     overflow-wrap: anywhere;
   }

@@ -2737,3 +2737,20 @@ textarea.form-control::placeholder {
     overflow-wrap: anywhere;
   }
 }
+/* Notifications - tablette en paysage */
+@media (min-width: 992px) and (max-width: 1366px) {
+  .navigation-shell .notifications-panel {
+    width: 520px;
+    max-width: calc(100vw - 3rem);
+  }
+
+  .navigation-shell .notifications-panel .card-body {
+    padding: 1.25rem;
+  }
+
+  .navigation-shell .notifications-panel .alert {
+    width: 100%;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+}

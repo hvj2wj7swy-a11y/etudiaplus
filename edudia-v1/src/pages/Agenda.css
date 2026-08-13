@@ -118,7 +118,6 @@
     white-space: normal;
   }
 
-  /* Sur téléphone : colonnes assez larges pour rester lisibles */
   .agenda-page-shell .agenda-week-body {
     min-width: 980px;
   }
@@ -145,10 +144,77 @@
   }
 
   .agenda-week-grid {
-  overflow-x: auto;
+    overflow-x: auto;
+  }
+
+  .agenda-week-body {
+    min-width: 1100px;
+  }
 }
 
-.agenda-week-body {
-  min-width: 1100px;
-}
+
+/* ========================================
+   AGENDA - TÉLÉPHONE
+   1 jour à la fois
+   ======================================== */
+
+@media (max-width: 767.98px) {
+  .agenda-page-shell .agenda-week-grid {
+    width: 100%;
+    overflow-x: hidden;
+    overflow-y: hidden;
+    display: grid;
+    grid-template-columns: 58px minmax(0, 1fr);
+    grid-template-rows: auto 960px;
+  }
+
+  .agenda-page-shell .agenda-week-body {
+    width: 100%;
+    min-width: 0 !important;
+    display: grid;
+    grid-template-columns: 58px minmax(0, 1fr);
+    height: 960px;
+  }
+
+  .agenda-page-shell .agenda-grid-corner {
+    grid-column: 1;
+  }
+
+  .agenda-page-shell .agenda-grid-day-header {
+    grid-column: 2;
+    min-width: 0 !important;
+    width: 100%;
+    padding: 0.7rem 0.5rem;
+    font-size: 0.9rem;
+  }
+
+  .agenda-page-shell .agenda-time-axis {
+    grid-column: 1;
+    width: 58px;
+  }
+
+  .agenda-page-shell .agenda-time-label {
+    right: 0.5rem;
+    font-size: 0.72rem;
+  }
+
+  .agenda-page-shell .agenda-day-column {
+    grid-column: 2 !important;
+    width: 100%;
+    min-width: 0 !important;
+    height: 960px;
+  }
+
+  .agenda-page-shell .agenda-event-card {
+    min-width: 0 !important;
+    max-width: 100%;
+  }
+
+  .agenda-page-shell .agenda-event-title {
+    font-size: 0.82rem;
+  }
+
+  .agenda-page-shell .agenda-event-meta {
+    font-size: 0.72rem;
+  }
 }

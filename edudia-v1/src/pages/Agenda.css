@@ -223,7 +223,7 @@
    7 jours visibles sans défilement horizontal
    ======================================== */
 
-@media (min-width: 768px) and (max-width: 1023.98px) {
+@media (min-width: 768px) and (max-width: 1366px) {
   .agenda-page-shell .agenda-week-grid {
     width: 100%;
     min-width: 0 !important;

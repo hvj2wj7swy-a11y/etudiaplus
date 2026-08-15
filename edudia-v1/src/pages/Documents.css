@@ -1,0 +1,228 @@
+.documents-page .document-item {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
+}
+
+.documents-page .document-image-preview {
+  width: 100%;
+  max-width: 220px;
+  max-height: 140px;
+  object-fit: cover;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+}
+
+.documents-page .documents-search-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.documents-page .documents-search-actions .form-control {
+  min-width: 260px;
+}
+
+.documents-page .document-file-meta {
+  display: inline-block;
+  max-width: min(100%, 320px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (min-width: 768px) and (max-width: 1023.98px) {
+  .documents-page .documents-search-actions {
+    flex-wrap: wrap;
+  }
+
+  .documents-page .documents-search-actions .form-control {
+    min-width: 0;
+    flex: 1 1 280px;
+  }
+}
+
+@media (max-width: 767.98px) {
+  .documents-page h1 {
+    font-size: 1.5rem;
+  }
+
+  .documents-page .documents-search-form {
+    width: 100%;
+  }
+
+  .documents-page .documents-search-actions {
+    flex-direction: column;
+  }
+
+  .documents-page .documents-search-actions .form-control {
+    min-width: 0;
+    width: 100%;
+  }
+
+  .documents-page .documents-search-actions .btn {
+    width: 100%;
+  }
+
+  .documents-page .document-item > .d-flex:first-child {
+    flex-direction: column;
+    align-items: stretch !important;
+  }
+
+  .documents-page .document-item > .d-flex:first-child .d-flex:last-child {
+    justify-content: flex-start !important;
+  }
+
+  .documents-page .document-item .btn {
+    width: 100%;
+    min-height: 44px;
+  }
+
+  .documents-page .document-image-preview {
+    max-width: 100%;
+    max-height: none;
+  }
+}
+
+.document-type-icon {
+  width: 54px;
+  min-width: 54px;
+  height: 54px;
+  border-radius: 14px;
+  color: #fff;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  box-shadow: 0 4px 10px rgba(15, 23, 42, 0.14);
+}
+
+.document-type-icon__emoji {
+  font-size: 1.25rem;
+  margin-bottom: 4px;
+}
+
+.document-type-icon__label {
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+}
+
+@media (max-width: 767.98px) {
+  .document-type-icon {
+    width: 48px;
+    min-width: 48px;
+    height: 48px;
+    border-radius: 12px;
+  }
+
+  .document-type-icon__emoji {
+    font-size: 1.1rem;
+  }
+
+  .document-type-icon__label {
+    font-size: 0.55rem;
+  }
+}
+
+.document-card-modern {
+  padding: 16px;
+  border: 1px solid #e2e8f0;
+  border-radius: 18px;
+  background: #ffffff;
+  box-shadow: 0 5px 18px rgba(15, 23, 42, 0.06);
+  transition:
+    transform 0.18s ease,
+    box-shadow 0.18s ease;
+}
+
+.document-card-modern:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 26px rgba(15, 23, 42, 0.1);
+}
+
+.document-card-modern__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.document-card-modern__identity {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  min-width: 0;
+}
+
+.document-card-modern__information {
+  min-width: 0;
+}
+
+.document-card-modern__title-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.document-card-modern__title {
+  color: #172033;
+  font-size: 1rem;
+  font-weight: 750;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.document-card-modern__file {
+  margin-top: 3px;
+  color: #64748b;
+  font-size: 0.82rem;
+  overflow-wrap: anywhere;
+}
+
+.document-card-modern__author {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  color: #64748b;
+  font-size: 0.78rem;
+}
+
+.document-card-modern__avatar {
+  width: 25px;
+  height: 25px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #e7efff;
+  color: #0d6efd;
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.document-card-modern__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 7px;
+}
+
+@media (max-width: 767.98px) {
+  .document-card-modern__header {
+    flex-direction: column;
+  }
+
+  .document-card-modern__actions {
+    width: 100%;
+    justify-content: stretch;
+  }
+
+  .document-card-modern__actions .btn {
+    flex: 1 1 auto;
+  }
+}

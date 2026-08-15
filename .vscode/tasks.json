@@ -1,0 +1,31 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Backend: start dev server",
+      "type": "shell",
+      "command": "cd backend && npm run dev",
+      "isBackground": true,
+      "group": "build",
+      "problemMatcher": []
+    },
+    {
+      "label": "Frontend: start dev server",
+      "type": "shell",
+      "command": "cd frontend && npm start",
+      "isBackground": true,
+      "group": "build",
+      "problemMatcher": []
+    },
+    {
+      "label": "Start Étudia+",
+      "dependsOn": [
+        "Backend: start dev server",
+        "Frontend: start dev server"
+      ],
+      "dependsOrder": "parallel",
+      "group": "build",
+      "problemMatcher": []
+    }
+  ]
+}

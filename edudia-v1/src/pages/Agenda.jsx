@@ -188,6 +188,10 @@ const token =
   const [viewMode, setViewMode] = useState('week')
   const [cursorDate, setCursorDate] = useState(new Date())
   const [currentTime, setCurrentTime] = useState(new Date())
+  const [isMobile, setIsMobile] = useState(false)
+const [mobileDayIndex, setMobileDayIndex] = useState(
+  getWeekdayIndex(new Date())
+)
   const [selectedMonthDate, setSelectedMonthDate] = useState(new Date())
   const [form, setForm] = useState({
     title: '',
@@ -281,6 +285,22 @@ const loadAgendaEvents = async () => {
   }, [])
 
   useEffect(() => {
+  const mediaQuery = window.matchMedia('(max-width: 767.98px)')
+
+  const updateMobile = () => {
+    setIsMobile(mediaQuery.matches)
+  }
+
+  updateMobile()
+
+  mediaQuery.addEventListener('change', updateMobile)
+
+  return () => {
+    mediaQuery.removeEventListener('change', updateMobile)
+  }
+}, [])
+
+  useEffect(() => {
   loadAgendaEvents()
 }, [token, user?.id])
 
@@ -295,7 +315,23 @@ const loadAgendaEvents = async () => {
 
   const weekTitle = formatWeekTitle(weekStart)
   const monthTitle = formatMonthTitle(monthStart)
-  const title = viewMode === 'week' ? weekTitle : monthTitle
+  const mobileSelectedDate =
+  addDays(weekStart, mobileDayIndex)
+
+const mobileDayTitle =
+  new Intl.DateTimeFormat('fr-FR', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long'
+  }).format(mobileSelectedDate)
+
+const title =
+  viewMode === 'week'
+    ? isMobile
+      ? mobileDayTitle.charAt(0).toUpperCase() +
+        mobileDayTitle.slice(1)
+      : weekTitle
+    : monthTitle
   const prevLabel = viewMode === 'week' ? 'Semaine précédente' : 'Mois précédent'
   const nextLabel = viewMode === 'week' ? 'Semaine prochaine' : 'Mois suivant'
 
@@ -546,14 +582,35 @@ color: '#dbeafe'
 }
 
   const goToToday = () => {
-    const now = new Date()
-    setCursorDate(now)
-    setSelectedMonthDate(now)
-  }
+  const now = new Date()
+
+  setCursorDate(now)
+  setSelectedMonthDate(now)
+  setMobileDayIndex(
+    getWeekdayIndex(now)
+  )
+}
 
   const changePeriod = (direction) => {
     setCursorDate((previous) => (viewMode === 'week' ? addDays(previous, direction * 7) : addMonths(previous, direction)))
   }
+
+  const changeMobileDay = (direction) => {
+  const currentMobileDate = addDays(
+    weekStart,
+    mobileDayIndex
+  )
+
+  const nextDate = addDays(
+    currentMobileDate,
+    direction
+  )
+
+  setCursorDate(nextDate)
+  setMobileDayIndex(
+    getWeekdayIndex(nextDate)
+  )
+}
 
   const handleMonthDateClick = (date) => {
     setSelectedMonthDate(date)
@@ -1089,9 +1146,41 @@ const handleCloseEventDetails = () => {
             <Card.Body className="agenda-toolbar-card">
               <div className="agenda-toolbar-actions">
                 <div className="agenda-toolbar-nav">
-                  <Button variant="outline-secondary" size="sm" onClick={() => changePeriod(-1)}>{prevLabel}</Button>
-                  <Button variant="outline-secondary" size="sm" onClick={goToToday}>Aujourd’hui</Button>
-                  <Button variant="outline-secondary" size="sm" onClick={() => changePeriod(1)}>{nextLabel}</Button>
+                  <Button
+  variant="outline-secondary"
+  size="sm"
+  onClick={() =>
+    isMobile && viewMode === 'week'
+      ? changeMobileDay(-1)
+      : changePeriod(-1)
+  }
+>
+  {isMobile && viewMode === 'week'
+    ? 'Jour précédent'
+    : prevLabel}
+</Button>
+
+<Button
+  variant="outline-secondary"
+  size="sm"
+  onClick={goToToday}
+>
+  Aujourd’hui
+</Button>
+
+<Button
+  variant="outline-secondary"
+  size="sm"
+  onClick={() =>
+    isMobile && viewMode === 'week'
+      ? changeMobileDay(1)
+      : changePeriod(1)
+  }
+>
+  {isMobile && viewMode === 'week'
+    ? 'Jour suivant'
+    : nextLabel}
+</Button>
                 </div>
                 <div className="agenda-toolbar-toggle">
                   <Button variant={viewMode === 'week' ? 'primary' : 'outline-secondary'} size="sm" onClick={() => setViewMode('week')}>Vue semaine</Button>
@@ -1105,9 +1194,20 @@ const handleCloseEventDetails = () => {
           {viewMode === 'week' ? (
             <div className="agenda-week-grid">
               <div className="agenda-grid-header agenda-grid-corner" />
-              {WEEK_DAYS.map((day) => (
-                <div key={day} className="agenda-grid-header agenda-grid-day-header">{day}</div>
-              ))}
+              {WEEK_DAYS.map((day, dayIndex) => {
+  if (isMobile && dayIndex !== mobileDayIndex) {
+    return null
+  }
+
+  return (
+    <div
+      key={day}
+      className="agenda-grid-header agenda-grid-day-header"
+    >
+      {day}
+    </div>
+  )
+})}
 
               <div className="agenda-week-body">
                 <div className="agenda-time-axis">
@@ -1122,13 +1222,22 @@ const handleCloseEventDetails = () => {
                 </div>
 
                 {WEEK_DAYS.map((day, dayIndex) => {
+                  if (isMobile && dayIndex !== mobileDayIndex) {
+  return null
+}
                   const columnDate = addDays(weekStart, dayIndex)
                   const columnDateKey = toDateKey(columnDate)
                   const dayEvents = weekEvents.filter((event) => event.date === columnDateKey)
                   const layout = groupOverlappingEvents(dayEvents)
 
                   return (
-                    <div key={day} className="agenda-day-column" style={{ gridColumn: dayIndex + 2 }}>
+                    <div
+  key={day}
+  className="agenda-day-column"
+  style={{
+    gridColumn: isMobile ? 2 : dayIndex + 2
+  }}
+>
                       {dayEvents.map((event) => {
                         const start = parseTimeToMinutes(event.startTime) - START_HOUR * 60
                         const end = parseTimeToMinutes(event.endTime) - START_HOUR * 60

@@ -1728,10 +1728,14 @@ if (report.contentType === 'answer') {
       <Button
         variant="outline-primary"
         onClick={() => {
-  const fileUrl =
-    selectedReport.documentFileUrl.startsWith('http')
-      ? selectedReport.documentFileUrl
-      : `http://localhost:5001${selectedReport.documentFileUrl}`
+  const backendBaseUrl = (
+  import.meta.env.VITE_API_URL || 'http://localhost:5001/api'
+).replace(/\/api\/?$/, '')
+
+const fileUrl =
+  selectedReport.documentFileUrl?.startsWith('http')
+    ? selectedReport.documentFileUrl
+    : `${backendBaseUrl}${selectedReport.documentFileUrl}`
 
   window.open(
     fileUrl,

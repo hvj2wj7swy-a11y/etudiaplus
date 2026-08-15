@@ -2685,3 +2685,89 @@ textarea.form-control::placeholder {
 .documents-course-accordion .accordion-body{
   background:#fafafa;
 }
+
+/* ========================================
+   NOTIFICATIONS RESPONSIVE
+   Téléphone + tablette
+   ======================================== */
+
+.navigation-shell .notifications-panel {
+  width: 360px;
+  max-width: calc(100vw - 2rem);
+  right: 0;
+  left: auto;
+}
+
+/* Tablette */
+@media (min-width: 576px) and (max-width: 1366px) {
+  .navigation-shell .notifications-panel {
+    width: 400px;
+    max-width: calc(100vw - 2rem);
+  }
+}
+
+/* Téléphone */
+@media (max-width: 575.98px) {
+  .navigation-shell .notifications-panel {
+    position: fixed !important;
+    top: 72px;
+    left: 12px !important;
+    right: 12px !important;
+
+    width: auto !important;
+    max-width: none !important;
+
+    margin-top: 0 !important;
+
+    max-height: calc(100dvh - 88px) !important;
+    overflow-y: auto;
+    overflow-x: hidden;
+
+    border-radius: 16px;
+  }
+
+  .navigation-shell .notifications-panel .card-body {
+    padding: 1rem;
+  }
+
+  .navigation-shell .notifications-panel .alert {
+    width: 100%;
+    margin: 0;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+}
+/* Notifications - tablette paysage */
+@media (min-width: 992px) and (max-width: 1366px) {
+  .navigation-shell .notifications-panel {
+    position: fixed !important;
+
+    top: 72px !important;
+    left: auto !important;
+    right: 16px !important;
+
+    width: 520px !important;
+    max-width: calc(100vw - 32px) !important;
+
+    margin-top: 0 !important;
+
+    max-height: calc(100dvh - 88px);
+    overflow-y: auto;
+    overflow-x: hidden;
+
+    border-radius: 16px;
+  }
+
+  .navigation-shell .notifications-panel .card-body {
+    width: 100%;
+    padding: 1.25rem;
+  }
+
+  .navigation-shell .notifications-panel .alert {
+    width: 100%;
+    margin-left: 0;
+    margin-right: 0;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+}

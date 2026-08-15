@@ -4,20 +4,10 @@ import { FolderOpen } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext.jsx'
 import NotebookPreview from '../components/NotebookPreview.jsx'
+import { noteAPI } from '../services/api.js'
 import {
   SHEET_TYPES,
-  createNotebook,
-  createNotebookFromPdf,
-  deleteNotebookFolder,
-  formatNoteDate,
-  listImportedFiles,
-  listNotebookFolders,
-  listNotebooks,
-  renameNotebookFolder,
-  saveImportedFile,
-  setNotebookFolder,
-  setNotebookFavorite,
-  setNotebookTrashState
+  formatNoteDate
 } from '../services/noteStore.js'
 import { importPdfAsNotebookPages } from '../services/pdfNotebook.js'
 
@@ -60,6 +50,7 @@ export default function Notes() {
   const [folderNotebookTarget, setFolderNotebookTarget] = useState('Sans dossier')
   const fileInputRef = useRef(null)
   const fallbackCourse = user?.programme || 'General'
+  const token = window.localStorage.getItem('edudia_auth_token')
 
   const normalizeSearchValue = (value) => {
     return String(value || '')
@@ -69,11 +60,119 @@ export default function Notes() {
   }
 
   useEffect(() => {
-    if (!user?.id) return
-    setNotebooks(listNotebooks(user.id, fallbackCourse))
-    setFolders(listNotebookFolders(user.id, fallbackCourse))
-    setImportedFiles(listImportedFiles(user.id))
-  }, [fallbackCourse, user?.id])
+  if (!user?.id || !token) return
+
+  const loadNotebooks = async () => {
+    try {
+      const response = await noteAPI.listNotebooks(token)
+      const summaries = response?.data?.notebooks || []
+
+      const detailedNotebooks = await Promise.all(
+        summaries.map(async (item) => {
+          const detailResponse = await noteAPI.getNotebook(
+            token,
+            item.id
+          )
+
+          const notebook =
+            detailResponse?.data?.notebook
+
+          return {
+            id: notebook.id,
+            name: notebook.title,
+            courseName: notebook.course_name,
+            folderName:
+              notebook.folder_name || 'Sans dossier',
+            color:
+              notebook.color || '#0d6efd',
+            isFavorite:
+              Boolean(notebook.is_favorite),
+            isTrashed:
+              Boolean(notebook.is_trashed),
+            sourcePdf:
+              notebook.source_pdf || null,
+            createdAt:
+              notebook.created_at,
+            updatedAt:
+              notebook.updated_at,
+            lastOpenedAt:
+              notebook.last_opened_at,
+
+            pages: (notebook.pages || []).map(
+              (page) => ({
+                id: page.id,
+                title: page.title,
+                sheetType:
+                  page.sheet_type,
+                previewText:
+                  page.preview_text || '',
+                background:
+                  page.background || null,
+                createdAt:
+                  page.created_at,
+                updatedAt:
+                  page.updated_at,
+
+                elements:
+                  (page.elements || []).map(
+                    (element) => ({
+                      ...(element.data || {}),
+                      id:
+                        element.data?.id ||
+                        element.id,
+                      type:
+                        element.data?.type ||
+                        element.type
+                    })
+                  )
+              })
+            )
+          }
+        })
+      )
+
+      setNotebooks(detailedNotebooks)
+
+      const nextFolders = [
+        ...new Set(
+          detailedNotebooks.map(
+            (notebook) =>
+              notebook.folderName ||
+              'Sans dossier'
+          )
+        )
+      ]
+
+      if (!nextFolders.includes('Sans dossier')) {
+        nextFolders.unshift('Sans dossier')
+      }
+
+      setFolders(nextFolders)
+
+      // Temporairement, historique PDF encore local
+      setImportedFiles(
+  detailedNotebooks
+    .filter((notebook) => notebook.sourcePdf)
+    .map((notebook) => ({
+      id: notebook.id,
+      name:
+        notebook.sourcePdf?.name ||
+        notebook.name,
+      createdAt:
+        notebook.sourcePdf?.importedAt ||
+        notebook.createdAt
+    }))
+)
+    } catch (error) {
+      console.error(
+        'Erreur chargement cahiers PostgreSQL:',
+        error
+      )
+    }
+  }
+
+  loadNotebooks()
+}, [token, user?.id])
 
   const sectionCounts = useMemo(() => {
     const active = notebooks.filter((notebook) => !notebook.isTrashed)
@@ -143,149 +242,618 @@ export default function Notes() {
     }, {})
   }, [filteredNotebooks])
 
-  const refreshLibrary = () => {
-    setNotebooks(listNotebooks(user.id, fallbackCourse))
-    const nextFolders = listNotebookFolders(user.id, fallbackCourse)
-    setFolders(nextFolders)
-    setRenameSource((current) => (nextFolders.includes(current) ? current : (nextFolders[0] || 'Sans dossier')))
-    setDeleteSource((current) => (nextFolders.includes(current) ? current : (nextFolders[0] || 'Sans dossier')))
-    setDeleteTarget((current) => (nextFolders.includes(current) ? current : (nextFolders[0] || 'Sans dossier')))
-    setFolderNotebookTarget((current) => (nextFolders.includes(current) ? current : (nextFolders[0] || 'Sans dossier')))
-    setImportedFiles(listImportedFiles(user.id))
-  }
+  const refreshLibrary = async () => {
+  if (!token || !user?.id) return
 
-  const handleCreateNotebook = (event) => {
-    event.preventDefault()
-    const notebook = createNotebook(
-      user.id,
-      {
-        ...form,
-        courseName: form.courseName || fallbackCourse,
-        folderName: form.folderName || 'Sans dossier'
-      },
-      fallbackCourse
+  try {
+    const [notebooksResponse, foldersResponse] =
+      await Promise.all([
+        noteAPI.listNotebooks(token),
+        noteAPI.listFolders(token)
+      ])
+
+    const summaries =
+      notebooksResponse?.data?.notebooks || []
+
+    const detailedNotebooks = await Promise.all(
+      summaries.map(async (item) => {
+        const detailResponse =
+          await noteAPI.getNotebook(
+            token,
+            item.id
+          )
+
+        const notebook =
+          detailResponse?.data?.notebook
+
+        return {
+          id: notebook.id,
+          name: notebook.title,
+          courseName: notebook.course_name,
+          folderName:
+            notebook.folder_name || 'Sans dossier',
+          color:
+            notebook.color || '#0d6efd',
+          isFavorite:
+            Boolean(notebook.is_favorite),
+          isTrashed:
+            Boolean(notebook.is_trashed),
+          sourcePdf:
+            notebook.source_pdf || null,
+          createdAt:
+            notebook.created_at,
+          updatedAt:
+            notebook.updated_at,
+          lastOpenedAt:
+            notebook.last_opened_at,
+
+          pages: (notebook.pages || []).map(
+            (page) => ({
+              id: page.id,
+              title: page.title,
+              sheetType: page.sheet_type,
+              previewText:
+                page.preview_text || '',
+              background:
+                page.background || null,
+              createdAt: page.created_at,
+              updatedAt: page.updated_at,
+
+              elements:
+                (page.elements || []).map(
+                  (element) => ({
+                    ...(element.data || {}),
+                    id:
+                      element.data?.id ||
+                      element.id,
+                    type:
+                      element.data?.type ||
+                      element.type
+                  })
+                )
+            })
+          )
+        }
+      })
     )
+
+    const nextFolders =
+      (foldersResponse?.data?.folders || [])
+        .map((folder) => folder.name)
+
+    if (!nextFolders.includes('Sans dossier')) {
+      nextFolders.unshift('Sans dossier')
+    }
+
+    setNotebooks(detailedNotebooks)
+    setFolders(nextFolders)
+
+    setRenameSource((current) =>
+      nextFolders.includes(current)
+        ? current
+        : nextFolders[0] || 'Sans dossier'
+    )
+
+    setDeleteSource((current) =>
+      nextFolders.includes(current)
+        ? current
+        : nextFolders[0] || 'Sans dossier'
+    )
+
+    setDeleteTarget((current) =>
+      nextFolders.includes(current)
+        ? current
+        : nextFolders[0] || 'Sans dossier'
+    )
+
+    setFolderNotebookTarget((current) =>
+      nextFolders.includes(current)
+        ? current
+        : nextFolders[0] || 'Sans dossier'
+    )
+
+    // PDF : encore local pour l'instant.
+    setImportedFiles(
+  detailedNotebooks
+    .filter((notebook) => notebook.sourcePdf)
+    .map((notebook) => ({
+      id: notebook.id,
+      name:
+        notebook.sourcePdf?.name ||
+        notebook.name,
+      createdAt:
+        notebook.sourcePdf?.importedAt ||
+        notebook.createdAt
+    }))
+)
+  } catch (error) {
+    console.error(
+      'Erreur actualisation Notes PostgreSQL:',
+      error
+    )
+  }
+}
+
+  const handleCreateNotebook = async (event) => {
+  event.preventDefault()
+
+  if (!token) return
+
+  try {
+    const response = await noteAPI.createNotebook(
+      token,
+      {
+        title: form.name,
+        courseName:
+          form.courseName || fallbackCourse,
+        folderName:
+          form.folderName || 'Sans dossier',
+        color:
+          form.color || '#0d6efd',
+        sheetType:
+          form.sheetType || 'lined'
+      }
+    )
+
+    const notebook =
+      response?.data?.notebook
+
+    if (!notebook?.id) {
+      throw new Error(
+        'Cahier non retourné par le serveur.'
+      )
+    }
+
     setShowCreateModal(false)
     setForm(DEFAULT_FORM)
-    refreshLibrary()
+
     navigate(`/notes/${notebook.id}`)
+  } catch (error) {
+    console.error(
+      'Erreur création cahier PostgreSQL:',
+      error
+    )
+
+    window.alert(
+      error.message ||
+        'Impossible de créer le cahier.'
+    )
+  }
   }
 
-  const handleFavorite = (notebookId, nextValue) => {
-    setNotebookFavorite(user.id, notebookId, nextValue, fallbackCourse)
-    refreshLibrary()
-  }
+  const handleFavorite = async (
+  notebookId,
+  nextValue
+) => {
+  if (!token) return
 
-  const handleTrash = (notebookId, nextValue) => {
-    setNotebookTrashState(user.id, notebookId, nextValue, fallbackCourse)
-    refreshLibrary()
+  try {
+    await noteAPI.setFavorite(
+      token,
+      notebookId,
+      nextValue
+    )
+
+    await refreshLibrary()
+  } catch (error) {
+    console.error(
+      'Erreur favori PostgreSQL:',
+      error
+    )
   }
+}
+
+  const handleTrash = async (
+  notebookId,
+  nextValue
+) => {
+  if (!token) return
+
+  try {
+    await noteAPI.setTrash(
+      token,
+      notebookId,
+      nextValue
+    )
+
+    await refreshLibrary()
+  } catch (error) {
+    console.error(
+      'Erreur corbeille PostgreSQL:',
+      error
+    )
+  }
+}
 
   const openFolderModal = (notebook = null) => {
-    const available = listNotebookFolders(user.id, fallbackCourse)
-    setFolders(available)
-    setRenameSource(available[0] || 'Sans dossier')
-    setDeleteSource(available[0] || 'Sans dossier')
-    setDeleteTarget(available[0] || 'Sans dossier')
-    setFolderNotebookId(notebook?.id || null)
-    setFolderNotebookTarget(notebook?.folderName || available[0] || 'Sans dossier')
-    setFolderDraft('')
-    setRenameTarget('')
-    setShowFolderModal(true)
+  const available =
+    folders.length > 0
+      ? folders
+      : ['Sans dossier']
+
+  setRenameSource(
+    available[0] || 'Sans dossier'
+  )
+
+  setDeleteSource(
+    available[0] || 'Sans dossier'
+  )
+
+  setDeleteTarget(
+    available[0] || 'Sans dossier'
+  )
+
+  setFolderNotebookId(
+    notebook?.id || null
+  )
+
+  setFolderNotebookTarget(
+    notebook?.folderName ||
+      available[0] ||
+      'Sans dossier'
+  )
+
+  setFolderDraft('')
+  setRenameTarget('')
+  setShowFolderModal(true)
+}
+
+
+const handleCreateFolder = async () => {
+  const nextName = folderDraft.trim()
+
+  if (!nextName || !token) return
+
+  if (folders.includes(nextName)) {
+    window.alert(
+      'Ce dossier existe déjà.'
+    )
+    return
   }
 
-  const handleCreateFolder = () => {
-    const nextName = folderDraft.trim()
-    if (!nextName) return
-    if (folders.includes(nextName)) {
-      window.alert('Ce dossier existe deja.')
-      return
-    }
+  try {
+    await noteAPI.createFolder(
+      token,
+      nextName
+    )
 
-    setFolders((previous) => [...previous, nextName].sort((left, right) => left.localeCompare(right, 'fr')))
     setFolderDraft('')
+
+    await refreshLibrary()
+  } catch (error) {
+    console.error(
+      'Erreur création dossier PostgreSQL:',
+      error
+    )
+
+    window.alert(
+      error.message ||
+        'Impossible de créer le dossier.'
+    )
+  }
+}
+
+
+const handleAssignNotebookFolder = async () => {
+  if (
+    !folderNotebookId ||
+    !token
+  ) {
+    return
   }
 
-  const handleAssignNotebookFolder = () => {
-    if (!folderNotebookId) return
-    setNotebookFolder(user.id, folderNotebookId, folderNotebookTarget, fallbackCourse)
-    refreshLibrary()
+  try {
+    await noteAPI.moveToFolder(
+      token,
+      folderNotebookId,
+      folderNotebookTarget
+    )
+
+    await refreshLibrary()
+
     setShowFolderModal(false)
+  } catch (error) {
+    console.error(
+      'Erreur déplacement dossier PostgreSQL:',
+      error
+    )
+
+    window.alert(
+      error.message ||
+        'Impossible de déplacer le cahier.'
+    )
+  }
+}
+
+
+const handleRenameFolder = async () => {
+  const nextName =
+    renameTarget.trim()
+
+  if (!nextName || !token) return
+
+  if (renameSource === nextName) {
+    return
   }
 
-  const handleRenameFolder = () => {
-    const nextName = renameTarget.trim()
-    if (!nextName) return
-    renameNotebookFolder(user.id, renameSource, nextName, fallbackCourse)
-    refreshLibrary()
-    setRenameTarget('')
-  }
+  try {
+    await noteAPI.renameFolder(
+      token,
+      renameSource,
+      nextName
+    )
 
-  const handleDeleteFolder = () => {
-    if (deleteSource === deleteTarget) {
-      window.alert('Choisissez un dossier de destination different.')
-      return
+    if (selectedFolder === renameSource) {
+      setSelectedFolder(nextName)
     }
-    deleteNotebookFolder(user.id, deleteSource, fallbackCourse, deleteTarget)
-    refreshLibrary()
+
+    setRenameTarget('')
+
+    await refreshLibrary()
+  } catch (error) {
+    console.error(
+      'Erreur renommage dossier PostgreSQL:',
+      error
+    )
+
+    window.alert(
+      error.message ||
+        'Impossible de renommer le dossier.'
+    )
   }
+}
+
+
+const handleDeleteFolder = async () => {
+  if (!token) return
+
+  if (
+    deleteSource ===
+    deleteTarget
+  ) {
+    window.alert(
+      'Choisissez un dossier de destination différent.'
+    )
+    return
+  }
+
+  try {
+    await noteAPI.deleteFolder(
+      token,
+      deleteSource,
+      deleteTarget
+    )
+
+    if (selectedFolder === deleteSource) {
+      setSelectedFolder('all')
+    }
+
+    await refreshLibrary()
+  } catch (error) {
+    console.error(
+      'Erreur suppression dossier PostgreSQL:',
+      error
+    )
+
+    window.alert(
+      error.message ||
+        'Impossible de supprimer le dossier.'
+    )
+  }
+}
 
   const handleFileImport = async (event) => {
-    const file = event.target.files?.[0]
-    if (!file || !user?.id) return
+  const file = event.target.files?.[0]
 
-    const lowerName = file.name.toLowerCase()
-    const isPdfByType = file.type === 'application/pdf'
-    const isPdfByExtension = lowerName.endsWith('.pdf')
-    if (!isPdfByType && !isPdfByExtension) {
-      setImportError('Seuls les fichiers PDF sont acceptes.')
-      setSelectedFileName('')
-      event.target.value = ''
-      return
-    }
+  if (!file || !user?.id || !token) return
 
-    setIsImportingFile(true)
-    setImportError('')
-    setSelectedFileName(file.name)
+  const lowerName = file.name.toLowerCase()
 
-    try {
-      const imported = await importPdfAsNotebookPages(file)
-      const notebook = createNotebookFromPdf(
-        user.id,
+  const isPdfByType =
+    file.type === 'application/pdf'
+
+  const isPdfByExtension =
+    lowerName.endsWith('.pdf')
+
+  if (!isPdfByType && !isPdfByExtension) {
+    setImportError(
+      'Seuls les fichiers PDF sont acceptés.'
+    )
+
+    setSelectedFileName('')
+    event.target.value = ''
+    return
+  }
+
+  setIsImportingFile(true)
+  setImportError('')
+  setSelectedFileName(file.name)
+
+  try {
+    // Convertir le PDF en pages
+    const imported =
+      await importPdfAsNotebookPages(file)
+
+    const importedPages =
+      Array.isArray(imported.pages)
+        ? imported.pages
+        : []
+
+    // Créer le cahier PostgreSQL
+    const createResponse =
+      await noteAPI.createNotebook(
+        token,
         {
-          name: file.name.replace(/\.pdf$/i, ''),
-          courseName: fallbackCourse,
-          color: '#0d6efd',
-          pdfName: imported.pdfName,
-          pages: imported.pages
-        },
-        fallbackCourse
+          title:
+            file.name.replace(/\.pdf$/i, '') ||
+            'PDF importé',
+
+          courseName:
+            fallbackCourse,
+
+          folderName:
+            'Sans dossier',
+
+          color:
+            '#0d6efd',
+
+          sheetType:
+            importedPages[0]?.sheetType ||
+            'blank',
+
+          sourcePdf: {
+            name:
+              imported.pdfName ||
+              file.name,
+
+            pageCount:
+              importedPages.length,
+
+            importedAt:
+              new Date().toISOString(),
+
+            size:
+              file.size
+          }
+        }
       )
 
-      // Keep a lightweight trace of imported files without affecting PDF notebook creation.
-      try {
-        saveImportedFile(user.id, {
-          name: file.name,
-          mimeType: file.type,
-          size: file.size,
-          lastModified: file.lastModified,
-          fileDataUrl: null,
-          source: 'device'
-        })
-      } catch {
-        // Ignore storage errors for history metadata.
+    const notebook =
+      createResponse?.data?.notebook
+
+    if (!notebook?.id) {
+      throw new Error(
+        'Le cahier PDF n’a pas été créé.'
+      )
+    }
+
+    const firstDatabasePage =
+      notebook.pages?.[0]
+
+    // Remplir la première page créée automatiquement
+    if (
+      firstDatabasePage &&
+      importedPages.length > 0
+    ) {
+      const firstImportedPage =
+        importedPages[0]
+
+      await noteAPI.updatePage(
+        token,
+        notebook.id,
+        firstDatabasePage.id,
+        {
+          title:
+            firstImportedPage.title ||
+            'Page 1',
+
+          sheetType:
+            firstImportedPage.sheetType ||
+            'blank',
+
+          previewText:
+            firstImportedPage.previewText ||
+            '',
+
+          background:
+            firstImportedPage.background ||
+            null,
+
+          elements:
+            firstImportedPage.elements ||
+            []
+        }
+      )
+    }
+
+    // Créer toutes les autres pages
+    for (
+      let index = 1;
+      index < importedPages.length;
+      index += 1
+    ) {
+      const importedPage =
+        importedPages[index]
+
+      const pageResponse =
+        await noteAPI.createPage(
+          token,
+          notebook.id,
+          {
+            title:
+              importedPage.title ||
+              `Page ${index + 1}`,
+
+            sheetType:
+              importedPage.sheetType ||
+              'blank',
+
+            background:
+              importedPage.background ||
+              null
+          }
+        )
+
+      const newPage =
+        pageResponse?.data?.page
+
+      if (!newPage?.id) {
+        throw new Error(
+          `Impossible de créer la page ${index + 1}.`
+        )
       }
 
-      refreshLibrary()
-      navigate(`/notes/${notebook.id}`)
-    } catch {
-      setImportError('Import impossible. Verifiez le fichier PDF et reessayez.')
-      window.alert('Import impossible. Verifiez le fichier et reessayez.')
-    } finally {
-      setIsImportingFile(false)
-      event.target.value = ''
+      await noteAPI.updatePage(
+        token,
+        notebook.id,
+        newPage.id,
+        {
+          title:
+            importedPage.title ||
+            `Page ${index + 1}`,
+
+          sheetType:
+            importedPage.sheetType ||
+            'blank',
+
+          previewText:
+            importedPage.previewText ||
+            '',
+
+          background:
+            importedPage.background ||
+            null,
+
+          elements:
+            importedPage.elements ||
+            []
+        }
+      )
     }
+
+    await refreshLibrary()
+
+    navigate(`/notes/${notebook.id}`)
+  } catch (error) {
+    console.error(
+      'Erreur import PDF PostgreSQL:',
+      error
+    )
+
+    setImportError(
+      error.message ||
+        'Import impossible. Vérifiez le fichier PDF et réessayez.'
+    )
+
+    window.alert(
+      error.message ||
+        'Import impossible. Vérifiez le fichier et réessayez.'
+    )
+  } finally {
+    setIsImportingFile(false)
+    event.target.value = ''
   }
+}
 
   return (
     <Container fluid className="notes-library-page py-4">

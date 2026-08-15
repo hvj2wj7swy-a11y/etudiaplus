@@ -1,22 +1,158 @@
+.dashboard-page {
+  max-width: 1400px;
+}
+
+
+/* ================================
+   EN-TÊTE
+   ================================ */
+
+.dashboard-welcome h1 {
+  color: var(--color-text);
+  font-size: clamp(2rem, 4vw, 3rem);
+  font-weight: 700;
+  letter-spacing: -0.03em;
+}
+
+.dashboard-welcome p {
+  font-size: 1.05rem;
+}
+
+
+/* ================================
+   CARTES RÉSUMÉ
+   ================================ */
+
+.dashboard-summary-card {
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-sm);
+  border-radius: var(--radius-lg);
+  transition:
+    transform 0.2s ease,
+    box-shadow 0.2s ease,
+    border-color 0.2s ease;
+}
+
+.dashboard-summary-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+  border-color: var(--color-accent-soft);
+}
+
+.dashboard-summary-card .card-body {
+  padding: 1.4rem;
+}
+
+.dashboard-summary-icon {
+  font-size: 1.7rem;
+  line-height: 1;
+  margin-bottom: 0.8rem;
+}
+
+.dashboard-summary-card .card-title {
+  color: var(--color-text);
+  font-size: 1.15rem;
+  font-weight: 700;
+  margin-bottom: 0.8rem;
+}
+
+.dashboard-summary-card strong {
+  color: var(--color-text);
+  font-size: 1rem;
+}
+
+.dashboard-big-number {
+  color: var(--color-text);
+  font-size: 2rem;
+  font-weight: 700;
+  line-height: 1;
+  margin-bottom: 0.6rem;
+}
+
+
+/* ================================
+   SECTION AUJOURD'HUI
+   ================================ */
+
+.dashboard-today-card {
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-sm);
+  border-radius: var(--radius-lg);
+}
+
+.dashboard-today-card .card-body {
+  padding: 1.5rem;
+}
+
+.dashboard-today-card .card-title {
+  color: var(--color-text);
+  font-size: 1.35rem;
+  font-weight: 700;
+}
+
+.dashboard-today-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.dashboard-today-event {
+  display: grid;
+  grid-template-columns: 70px minmax(0, 1fr);
+  align-items: center;
+  gap: 1rem;
+  padding: 0.9rem 1rem;
+  background: #f8fafc;
+  border: 1px solid var(--color-border);
+  border-radius: 0.85rem;
+}
+
+.dashboard-today-time {
+  color: var(--color-accent);
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+
+
+/* ================================
+   MES OUTILS
+   ================================ */
+
+.dashboard-tools-title {
+  color: var(--color-text);
+  font-size: 1.65rem;
+  font-weight: 700;
+}
+
 .dashboard-link-card {
   border: 1px solid var(--color-border);
   background: var(--color-surface);
   box-shadow: var(--shadow-sm);
-  min-height: 220px;
+  min-height: 180px;
   cursor: pointer;
   border-radius: var(--radius-lg);
-  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+  transition:
+    transform 0.2s ease,
+    box-shadow 0.2s ease,
+    border-color 0.2s ease;
+}
+
+.dashboard-link-card .card-body {
+  padding: 1.4rem;
 }
 
 .dashboard-link-card .card-title {
   color: var(--color-text);
-  font-size: 1.65rem;
-  font-weight: 600;
+  font-size: 1.35rem;
+  font-weight: 700;
 }
 
 .dashboard-link-card .card-text {
   color: var(--color-text-muted);
-  font-size: 1rem;
+  font-size: 0.95rem;
+  line-height: 1.5;
 }
 
 .dashboard-link-card:hover {
@@ -30,12 +166,105 @@
   outline-offset: 2px;
 }
 
-@media (max-width: 767px) {
+
+/* ================================
+   TABLETTE
+   ================================ */
+
+@media (max-width: 991.98px) {
+  .dashboard-page {
+    padding-left: 1rem;
+    padding-right: 1rem;
+  }
+
+  .dashboard-summary-card .card-body {
+    padding: 1.2rem;
+  }
+
   .dashboard-link-card {
-    min-height: 190px;
+    min-height: 160px;
+  }
+}
+
+
+/* ================================
+   TÉLÉPHONE
+   ================================ */
+
+@media (max-width: 575.98px) {
+  .dashboard-page {
+    padding-left: 0.85rem;
+    padding-right: 0.85rem;
+  }
+
+  .dashboard-welcome {
+    margin-bottom: 1.25rem !important;
+  }
+
+  .dashboard-welcome h1 {
+    font-size: 1.75rem;
+  }
+
+  .dashboard-welcome p {
+    font-size: 0.95rem;
+  }
+
+  .dashboard-summary-card .card-body {
+    padding: 1.1rem;
+  }
+
+  .dashboard-summary-icon {
+    font-size: 1.45rem;
+    margin-bottom: 0.6rem;
+  }
+
+  .dashboard-summary-card .card-title {
+    font-size: 1.05rem;
+  }
+
+  .dashboard-big-number {
+    font-size: 1.7rem;
+  }
+
+  .dashboard-today-card .card-body {
+    padding: 1.1rem;
+  }
+
+  .dashboard-today-event {
+    grid-template-columns: 55px minmax(0, 1fr);
+    gap: 0.75rem;
+    padding: 0.8rem;
+  }
+
+  .dashboard-today-time {
+    font-size: 0.85rem;
+  }
+
+  .dashboard-tools-title {
+    font-size: 1.4rem;
+  }
+
+  .dashboard-link-card {
+    min-height: 135px;
   }
 
   .dashboard-link-card .card-title {
-    font-size: 1.35rem;
+    font-size: 1.2rem;
   }
+
+  .dashboard-link-card .card-text {
+    font-size: 0.9rem;
+  }
+  .dashboard-week-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  color: var(--color-text-muted);
+  font-size: 0.95rem;
+}
+
+.dashboard-week-summary strong {
+  color: var(--color-text);
+  font-size: 1.15rem;
+}
 }

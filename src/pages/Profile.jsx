@@ -1,7 +1,18 @@
 import React, { useMemo, useState } from 'react'
-import { Container, Row, Col, Card, Form, Button, Alert, Badge, ProgressBar, Table } from 'react-bootstrap'
+import {
+  Container,
+  Row,
+  Col,
+  Card,
+  Form,
+  Button,
+  Alert,
+  Badge,
+  ProgressBar
+} from 'react-bootstrap'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext.jsx'
+import './Profile.css'
 
 const USERS_KEY = 'edudia_users'
 
@@ -99,9 +110,19 @@ const getProgressData = (points) => {
 }
 
 export default function Profile() {
-  const { user, updateProgramme, deactivateSubscription } = useAuth()
+  const {
+  user,
+  updateProfile,
+  deactivateSubscription
+} = useAuth()
   const navigate = useNavigate()
-  const [programme, setProgramme] = useState(user?.programme || PROGRAMMES[0])
+  const [firstName, setFirstName] = useState(user?.firstName || '')
+const [lastName, setLastName] = useState(user?.lastName || '')
+const [school, setSchool] = useState(user?.school || '')
+const [programme, setProgramme] = useState(
+  user?.programme || PROGRAMMES[0]
+)
+const [session, setSession] = useState(user?.session || '')
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
 
@@ -128,37 +149,60 @@ export default function Profile() {
   const subscriptionStartLabel = user?.subscriptionStartDate || 'Non disponible'
   const profileTitle = user?.role === 'admin' ? 'Profil administrateur' : 'Profil étudiant'
 
-  const handleSubmit = (event) => {
-    event.preventDefault()
-    setMessage('')
-    setError('')
+  const handleSubmit = async (event) => {
+  event.preventDefault()
+  setMessage('')
+  setError('')
 
-    const result = updateProgramme(programme)
-    if (!result?.success) {
-      setError(result?.message || 'Impossible de mettre à jour le programme.')
-      return
-    }
-
-    setMessage('Programme mis à jour avec succès.')
+  if (!firstName.trim() || !lastName.trim()) {
+    setError('Le prénom et le nom sont obligatoires.')
+    return
   }
 
-  const handleCancelSubscription = () => {
-    setMessage('')
-    setError('')
+  const result = await updateProfile({
+    firstName: firstName.trim(),
+    lastName: lastName.trim(),
+    school: school.trim(),
+    program: programme,
+    session: session.trim()
+  })
 
-    const confirmed = window.confirm(
-      'Êtes-vous sûr de vouloir résilier votre abonnement ? Vous perdrez l’accès aux documents, forum, agenda et outils d’étude.'
+  if (!result?.success) {
+    setError(
+      result?.message ||
+        'Impossible de mettre à jour le profil.'
     )
-    if (!confirmed) return
-
-    const ok = deactivateSubscription()
-    if (!ok) {
-      setError('Impossible de résilier l\'abonnement pour le moment.')
-      return
-    }
-
-    navigate('/subscription', { replace: true, state: { cancelled: true } })
+    return
   }
+
+  setMessage('Profil mis à jour avec succès.')
+}
+
+  const handleCancelSubscription = async () => {
+  setMessage('')
+  setError('')
+
+  const confirmed = window.confirm(
+    'Êtes-vous sûr de vouloir résilier votre abonnement ? Votre accès restera actif jusqu’à la fin de la période déjà payée.'
+  )
+
+  if (!confirmed) return
+
+  const result = await deactivateSubscription()
+
+  if (!result?.success) {
+    setError(
+      result?.message ||
+      'Impossible de résilier l’abonnement pour le moment.'
+    )
+    return
+  }
+
+  setMessage(
+    result?.message ||
+    'Votre abonnement ne sera pas renouvelé.'
+  )
+}
 
   return (
     <Container className="py-4 profile-page">
@@ -166,145 +210,467 @@ export default function Profile() {
         <Col md={10} lg={8}>
           <Card className="shadow-sm">
             <Card.Body>
-              <h1 className="h3 mb-4">{profileTitle}</h1>
+              <div className="profile-hero mb-4">
+  <div className="profile-hero-avatar">
+    {String(user?.nom || 'E')
+      .trim()
+      .charAt(0)
+      .toUpperCase()}
+  </div>
+
+  <div className="profile-hero-content">
+    <div className="profile-hero-label">
+      {profileTitle}
+    </div>
+
+    <h1 className="profile-hero-name">
+      {user?.nom || 'Étudiant'}
+    </h1>
+
+    <div className="profile-hero-programme">
+      🎓 {user?.programme || 'Programme non défini'}
+    </div>
+
+    <div className="profile-hero-meta">
+      <span className="profile-hero-level">
+        ⭐ {progressData.currentLevel.name}
+      </span>
+
+      <span className="profile-hero-points">
+        🏆 {currentUserProfile.points || 0} points
+      </span>
+    </div>
+  </div>
+</div>
 
               {message && <Alert variant="success">{message}</Alert>}
               {error && <Alert variant="danger">{error}</Alert>}
 
-              <Row className="g-3 mb-4">
-                <Col md={6}>
-                  <div className="border rounded p-3 bg-light">
-                    <div className="text-muted small">Nom</div>
-                    <div className="fw-semibold">{user?.nom || '-'}</div>
-                  </div>
-                </Col>
-                <Col md={6}>
-                  <div className="border rounded p-3 bg-light">
-                    <div className="text-muted small">Email</div>
-                    <div className="fw-semibold">{user?.email || '-'}</div>
-                  </div>
-                </Col>
-                <Col md={6}>
-                  <div className="border rounded p-3 bg-light">
-                    <div className="text-muted small">Programme actuel</div>
-                    <div className="fw-semibold">{user?.programme || '-'}</div>
-                  </div>
-                </Col>
-                <Col md={6}>
-                  <div className="border rounded p-3 bg-light">
-                    <div className="text-muted small">Statut d'abonnement</div>
-                    <div className="fw-semibold">{subscriptionLabel}</div>
-                  </div>
-                </Col>
-              </Row>
+              <Row className="g-3 mb-4 profile-info-grid">
+  <Col md={6}>
+    <div className="profile-info-card">
+      <div className="profile-info-icon">
+        👤
+      </div>
 
-              <Card className="mb-4 border-0 bg-light-subtle">
-                <Card.Body>
-                  <h2 className="h5 mb-3">Points et récompenses</h2>
-                  <Row className="g-3 mb-3">
-                    <Col md={4}>
-                      <div className="border rounded p-3 bg-white h-100">
-                        <div className="text-muted small">Points totaux</div>
-                        <div className="fw-bold fs-4">{currentUserProfile.points || 0}</div>
-                      </div>
-                    </Col>
-                    <Col md={4}>
-                      <div className="border rounded p-3 bg-white h-100">
-                        <div className="text-muted small">Niveau actuel</div>
-                        <div className="fw-bold fs-5">{progressData.currentLevel.name}</div>
-                      </div>
-                    </Col>
-                    <Col md={4}>
-                      <div className="border rounded p-3 bg-white h-100">
-                        <div className="text-muted small">Badges</div>
-                        <div className="d-flex flex-wrap gap-2 mt-2">
-                          {(currentUserProfile.badges || []).map((badge) => (
-                            <Badge key={badge} bg="primary">{badge}</Badge>
-                          ))}
-                          {(currentUserProfile.badges || []).length === 0 && <span className="text-muted">Aucun badge</span>}
-                        </div>
-                      </div>
-                    </Col>
-                  </Row>
+      <div>
+        <div className="profile-info-label">
+          Nom
+        </div>
 
-                  <div className="mb-2 d-flex justify-content-between align-items-center gap-2 flex-wrap">
-                    <span className="fw-semibold">Progression vers le niveau suivant</span>
-                    <span className="text-muted small">
-                      {progressData.nextLevel ? `${progressData.pointsToNextLevel} points avant ${progressData.nextLevel.name}` : 'Niveau maximum atteint'}
-                    </span>
-                  </div>
-                  <ProgressBar now={progressData.progressPercent} label={`${Math.round(progressData.progressPercent)}%`} />
-                </Card.Body>
-              </Card>
+        <div className="profile-info-value">
+          {user?.nom || '-'}
+        </div>
+      </div>
+    </div>
+  </Col>
 
-              <Card className="mb-4 border-0 bg-light-subtle">
-                <Card.Body>
-                  <h2 className="h5 mb-3">Top contributeurs</h2>
-                  {topContributors.length === 0 ? (
-                    <Alert variant="info" className="mb-0">Aucun contributeur disponible pour le moment.</Alert>
-                  ) : (
-                    <Table responsive hover className="mb-0 align-middle">
-                      <thead>
-                        <tr>
-                          <th>Nom</th>
-                          <th>Programme</th>
-                          <th>Points</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {topContributors.map((contributor) => (
-                          <tr key={contributor.id}>
-                            <td>{contributor.nom}</td>
-                            <td>{contributor.programme || '-'}</td>
-                            <td className="fw-semibold">{contributor.points}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </Table>
-                  )}
-                </Card.Body>
-              </Card>
+  <Col md={6}>
+    <div className="profile-info-card">
+      <div className="profile-info-icon">
+        📧
+      </div>
 
-              <Form onSubmit={handleSubmit}>
-                <Form.Group className="mb-3">
-                  <Form.Label>Modifier le programme d'étude</Form.Label>
-                  <Form.Select value={programme} onChange={(event) => setProgramme(event.target.value)}>
-                    {PROGRAMMES.map((item) => (
-                      <option key={item} value={item}>{item}</option>
-                    ))}
-                  </Form.Select>
-                </Form.Group>
+      <div>
+        <div className="profile-info-label">
+          Courriel
+        </div>
 
-                <Button type="submit">Enregistrer le programme</Button>
-              </Form>
+        <div className="profile-info-value">
+          {user?.email || '-'}
+        </div>
+      </div>
+    </div>
+  </Col>
 
-              <hr className="my-4" />
+  <Col md={6}>
+    <div className="profile-info-card">
+      <div className="profile-info-icon">
+        🎓
+      </div>
 
-              <h2 className="h5 mb-3">Gestion de l'abonnement</h2>
-              <Row className="g-3 mb-3">
-                <Col md={4}>
-                  <div className="border rounded p-3 bg-light">
-                    <div className="text-muted small">Statut actuel</div>
-                    <div className="fw-semibold">{subscriptionLabel}</div>
-                  </div>
-                </Col>
-                <Col md={4}>
-                  <div className="border rounded p-3 bg-light">
-                    <div className="text-muted small">Type d'abonnement</div>
-                    <div className="fw-semibold">{subscriptionTypeLabel}</div>
-                  </div>
-                </Col>
-                <Col md={4}>
-                  <div className="border rounded p-3 bg-light">
-                    <div className="text-muted small">Date de début</div>
-                    <div className="fw-semibold">{subscriptionStartLabel}</div>
-                  </div>
-                </Col>
-              </Row>
+      <div>
+        <div className="profile-info-label">
+          Programme actuel
+        </div>
 
-              <Button variant="outline-danger" onClick={handleCancelSubscription}>
-                Résilier mon abonnement
-              </Button>
+        <div className="profile-info-value">
+          {user?.programme || '-'}
+        </div>
+      </div>
+    </div>
+  </Col>
+
+  <Col md={6}>
+    <div className="profile-info-card">
+      <div className="profile-info-icon">
+        💳
+      </div>
+
+      <div>
+        <div className="profile-info-label">
+          Statut d’abonnement
+        </div>
+
+        <div className="profile-info-value">
+          {subscriptionLabel}
+        </div>
+      </div>
+    </div>
+  </Col>
+</Row>
+
+              <Card className="mb-4 border-0 profile-rewards-card">
+  <Card.Body>
+    <div className="d-flex justify-content-between align-items-center gap-3 flex-wrap mb-3">
+      <div>
+        <h2 className="h5 mb-1">
+          Points et récompenses
+        </h2>
+
+        <div className="text-muted small">
+          Ta progression dans la communauté Étudia+
+        </div>
+      </div>
+
+      <span className="profile-rewards-level">
+        ⭐ {progressData.currentLevel.name}
+      </span>
+    </div>
+
+    <Row className="g-3 mb-4">
+      <Col md={4}>
+        <div className="profile-stat-card">
+          <div className="profile-stat-icon">
+            🏆
+          </div>
+
+          <div className="profile-stat-label">
+            Points totaux
+          </div>
+
+          <div className="profile-stat-value">
+            {currentUserProfile.points || 0}
+          </div>
+        </div>
+      </Col>
+
+      <Col md={4}>
+        <div className="profile-stat-card">
+          <div className="profile-stat-icon">
+            ⭐
+          </div>
+
+          <div className="profile-stat-label">
+            Niveau actuel
+          </div>
+
+          <div className="profile-stat-value profile-stat-value-text">
+            {progressData.currentLevel.name}
+          </div>
+        </div>
+      </Col>
+
+      <Col md={4}>
+        <div className="profile-stat-card">
+          <div className="profile-stat-icon">
+            🎖️
+          </div>
+
+          <div className="profile-stat-label">
+            Badges
+          </div>
+
+          <div className="d-flex flex-wrap justify-content-center gap-2 mt-2">
+            {(currentUserProfile.badges || []).map(
+              (badge) => (
+                <Badge
+                  key={badge}
+                  bg="primary"
+                  className="profile-reward-badge"
+                >
+                  {badge}
+                </Badge>
+              )
+            )}
+
+            {(currentUserProfile.badges || [])
+              .length === 0 && (
+              <span className="text-muted small">
+                Aucun badge
+              </span>
+            )}
+          </div>
+        </div>
+      </Col>
+    </Row>
+
+    <div className="profile-progress-header">
+      <span className="fw-semibold">
+        Progression vers le niveau suivant
+      </span>
+
+      <span className="text-muted small">
+        {progressData.nextLevel
+          ? `${progressData.pointsToNextLevel} points avant ${progressData.nextLevel.name}`
+          : 'Niveau maximum atteint'}
+      </span>
+    </div>
+
+    <ProgressBar
+      now={progressData.progressPercent}
+      label={`${Math.round(
+        progressData.progressPercent
+      )}%`}
+      className="profile-progress-bar"
+    />
+  </Card.Body>
+</Card>
+
+             <Card className="mb-4 border-0 profile-ranking-card">
+  <Card.Body>
+    <div className="mb-3">
+      <h2 className="h5 mb-1">
+        Top contributeurs
+      </h2>
+
+      <div className="text-muted small">
+        Les étudiants les plus actifs de la communauté
+      </div>
+    </div>
+
+    {topContributors.length === 0 ? (
+      <Alert variant="info" className="mb-0">
+        Aucun contributeur disponible pour le moment.
+      </Alert>
+    ) : (
+      <div className="profile-ranking-list">
+        {topContributors.map((contributor, index) => (
+          <div
+            key={contributor.id}
+            className="profile-ranking-item"
+          >
+            <div className="profile-ranking-position">
+              {index === 0
+                ? '🥇'
+                : index === 1
+                  ? '🥈'
+                  : index === 2
+                    ? '🥉'
+                    : `#${index + 1}`}
+            </div>
+
+            <div className="profile-ranking-avatar">
+              {String(contributor.nom || 'E')
+                .trim()
+                .charAt(0)
+                .toUpperCase()}
+            </div>
+
+            <div className="profile-ranking-user">
+              <div className="profile-ranking-name">
+                {contributor.nom || 'Étudiant'}
+              </div>
+
+              <div className="profile-ranking-programme">
+                {contributor.programme || 'Programme non défini'}
+              </div>
+            </div>
+
+            <div className="profile-ranking-points">
+              {contributor.points || 0}
+              <span> pts</span>
+            </div>
+          </div>
+        ))}
+      </div>
+    )}
+  </Card.Body>
+</Card>
+
+              <Card className="mb-4 border-0 profile-settings-card">
+  <Card.Body>
+    <div className="d-flex align-items-center gap-3 mb-3">
+      <div className="profile-settings-icon">
+        👤
+      </div>
+
+      <div>
+        <h2 className="h5 mb-1">
+          Informations du profil
+        </h2>
+
+        <div className="text-muted small">
+          Modifie ton nom, ton établissement, ton programme et ta session.
+        </div>
+      </div>
+    </div>
+
+    <Form onSubmit={handleSubmit}>
+      <Row className="g-3">
+        <Col md={6}>
+          <Form.Group>
+            <Form.Label>Prénom</Form.Label>
+
+            <Form.Control
+              required
+              value={firstName}
+              onChange={(event) =>
+                setFirstName(event.target.value)
+              }
+              placeholder="Ton prénom"
+            />
+          </Form.Group>
+        </Col>
+
+        <Col md={6}>
+          <Form.Group>
+            <Form.Label>Nom</Form.Label>
+
+            <Form.Control
+              required
+              value={lastName}
+              onChange={(event) =>
+                setLastName(event.target.value)
+              }
+              placeholder="Ton nom"
+            />
+          </Form.Group>
+        </Col>
+
+        <Col md={6}>
+          <Form.Group>
+            <Form.Label>Établissement</Form.Label>
+
+            <Form.Control
+              value={school}
+              onChange={(event) =>
+                setSchool(event.target.value)
+              }
+              placeholder="Ex. Cégep de Saint-Jean-sur-Richelieu"
+            />
+          </Form.Group>
+        </Col>
+
+        <Col md={6}>
+          <Form.Group>
+            <Form.Label>Session</Form.Label>
+
+            <Form.Control
+              value={session}
+              onChange={(event) =>
+                setSession(event.target.value)
+              }
+              placeholder="Ex. Automne 2026"
+            />
+          </Form.Group>
+        </Col>
+
+        <Col md={12}>
+          <Form.Group>
+            <Form.Label>Programme</Form.Label>
+
+            <Form.Select
+              value={programme}
+              onChange={(event) =>
+                setProgramme(event.target.value)
+              }
+            >
+              {PROGRAMMES.map((item) => (
+                <option key={item} value={item}>
+                  {item}
+                </option>
+              ))}
+            </Form.Select>
+          </Form.Group>
+        </Col>
+      </Row>
+
+      <div className="d-flex justify-content-end mt-4">
+        <Button type="submit">
+          Enregistrer les modifications
+        </Button>
+      </div>
+    </Form>
+  </Card.Body>
+</Card>
+
+              <Card className="border-0 profile-subscription-card">
+  <Card.Body>
+    <div className="d-flex align-items-center gap-3 mb-3">
+      <div className="profile-settings-icon">
+        💳
+      </div>
+
+      <div>
+        <h2 className="h5 mb-1">
+          Gestion de l’abonnement
+        </h2>
+
+        <div className="text-muted small">
+          Consulte les informations de ton abonnement.
+        </div>
+      </div>
+    </div>
+
+    <Row className="g-3 mb-4">
+      <Col md={4}>
+        <div className="profile-subscription-info">
+          <div className="profile-subscription-label">
+            Statut actuel
+          </div>
+
+          <div className="profile-subscription-value">
+            {subscriptionLabel}
+          </div>
+        </div>
+      </Col>
+
+      <Col md={4}>
+        <div className="profile-subscription-info">
+          <div className="profile-subscription-label">
+            Type d’abonnement
+          </div>
+
+          <div className="profile-subscription-value">
+            {subscriptionTypeLabel}
+          </div>
+        </div>
+      </Col>
+
+      <Col md={4}>
+        <div className="profile-subscription-info">
+          <div className="profile-subscription-label">
+            Date de début
+          </div>
+
+          <div className="profile-subscription-value">
+            {subscriptionStartLabel}
+          </div>
+        </div>
+      </Col>
+    </Row>
+
+    <div className="profile-subscription-danger">
+      <div>
+        <div className="fw-semibold">
+          Résilier l’abonnement
+        </div>
+
+        <div className="text-muted small">
+          Cette action désactivera le renouvellement automatique. Votre accès restera actif jusqu’à la fin de la période payée.
+        </div>
+      </div>
+
+      <Button
+        variant="outline-danger"
+        onClick={handleCancelSubscription}
+      >
+        Résilier mon abonnement
+      </Button>
+    </div>
+  </Card.Body>
+</Card>
             </Card.Body>
           </Card>
         </Col>

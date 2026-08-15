@@ -26,18 +26,13 @@ import {
   MousePointer2
 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext.jsx'
+import { noteAPI } from '../services/api.js'
 import NotebookPreview from '../components/NotebookPreview.jsx'
 import {
   SHEET_TYPES,
-  addNotebookPage,
-  deleteNotebookPage,
-  duplicateNotebookPage,
   formatNoteDate,
-  getNotebookById,
   getSheetClassName,
   refreshNotebookPreview,
-  saveNotebookSnapshot,
-  updateNotebookMeta
 } from '../services/noteStore.js'
 import { exportNotebookToPdf, importPdfAsNotebookPages } from '../services/pdfNotebook.js'
 
@@ -65,7 +60,10 @@ const buildStrokePath = (points = []) => {
 }
 
 const normalizeShapeBounds = (shape) => {
-  if (shape.shape === 'line') {
+  if (
+  shape.shape === 'line' ||
+  shape.shape === 'arrow'
+) {
     return {
       x: Math.min(shape.x, shape.x2),
       y: Math.min(shape.y, shape.y2),
@@ -80,6 +78,57 @@ const normalizeShapeBounds = (shape) => {
     width: Math.abs(shape.width),
     height: Math.abs(shape.height)
   }
+}
+
+const buildStarPoints = (bounds) => {
+  const centerX = bounds.x + bounds.width / 2
+  const centerY = bounds.y + bounds.height / 2
+  const outerRadius = Math.min(bounds.width, bounds.height) / 2
+  const innerRadius = outerRadius * 0.45
+  const points = []
+
+  for (let index = 0; index < 10; index += 1) {
+    const radius =
+      index % 2 === 0
+        ? outerRadius
+        : innerRadius
+
+    const angle =
+      -Math.PI / 2 +
+      index * Math.PI / 5
+
+    points.push(
+      `${centerX + Math.cos(angle) * radius},${
+        centerY + Math.sin(angle) * radius
+      }`
+    )
+  }
+
+  return points.join(' ')
+}
+
+const buildHeartPath = (bounds) => {
+  const x = bounds.x
+  const y = bounds.y
+  const width = bounds.width
+  const height = bounds.height
+
+  return `
+    M ${x + width / 2} ${y + height}
+    C ${x + width * 0.1} ${y + height * 0.72},
+      ${x} ${y + height * 0.4},
+      ${x} ${y + height * 0.25}
+    C ${x} ${y - height * 0.02},
+      ${x + width * 0.35} ${y - height * 0.08},
+      ${x + width / 2} ${y + height * 0.22}
+    C ${x + width * 0.65} ${y - height * 0.08},
+      ${x + width} ${y - height * 0.02},
+      ${x + width} ${y + height * 0.25}
+    C ${x + width} ${y + height * 0.4},
+      ${x + width * 0.9} ${y + height * 0.72},
+      ${x + width / 2} ${y + height}
+    Z
+  `
 }
 
 const getElementBounds = (element) => {
@@ -115,6 +164,38 @@ const pointInBounds = (point, bounds) => {
   return point.x >= bounds.x && point.x <= bounds.x + bounds.width && point.y >= bounds.y && point.y <= bounds.y + bounds.height
 }
 
+const getBoundsCenter = (bounds) => ({
+  x: bounds.x + bounds.width / 2,
+  y: bounds.y + bounds.height / 2
+})
+
+const normalizeRotation = (angle) => {
+  const normalized = angle % 360
+  return normalized < 0
+    ? normalized + 360
+    : normalized
+}
+
+const getPointerAngle = (point, center) =>
+  Math.atan2(
+    point.y - center.y,
+    point.x - center.x
+  ) *
+  (180 / Math.PI)
+
+  const getElementRotationTransform = (element) => {
+  const rotation = Number(element.rotation || 0)
+
+  if (rotation === 0) {
+    return undefined
+  }
+
+  const bounds = getElementBounds(element)
+  const center = getBoundsCenter(bounds)
+
+  return `rotate(${rotation} ${center.x} ${center.y})`
+}
+
 const cloneNotebook = (value) => {
   if (typeof structuredClone === 'function') {
     return structuredClone(value)
@@ -123,7 +204,13 @@ const cloneNotebook = (value) => {
   return JSON.parse(JSON.stringify(value))
 }
 
-const createShapeDraft = (tool, point, color, strokeWidth) => ({
+const createShapeDraft = (
+  tool,
+  point,
+  color,
+  strokeWidth,
+  shapeFillColor
+) => ({
   id: `draft_${tool}`,
   type: 'shape',
   shape: tool.replace('shape-', ''),
@@ -134,23 +221,14 @@ const createShapeDraft = (tool, point, color, strokeWidth) => ({
   width: 0,
   height: 0,
   color,
-  fill: tool === 'shape-line' ? 'transparent' : 'rgba(13, 110, 253, 0.06)',
-  strokeWidth
+  fill:
+  tool === 'shape-line' || tool === 'shape-arrow'
+    ? 'transparent'
+    : shapeFillColor,
+  strokeWidth,
+rotation: 0,
+arrowHeadSize: tool === 'shape-arrow' ? 18 : undefined
 })
-
-const createImportedPage = (page, index) => {
-  const timestamp = new Date().toISOString()
-  return {
-    id: `page_${Date.now()}_${index}_${Math.random().toString(36).slice(2, 7)}`,
-    title: page.title || `Page ${index + 1}`,
-    sheetType: page.sheetType || 'blank',
-    createdAt: timestamp,
-    updatedAt: timestamp,
-    elements: Array.isArray(page.elements) ? page.elements : [],
-    background: page.background || null,
-    previewText: ''
-  }
-}
 
 export default function NotebookEditor() {
   const { notebookId } = useParams()
@@ -160,6 +238,7 @@ export default function NotebookEditor() {
   const [selectedPageId, setSelectedPageId] = useState(null)
   const [activeTool, setActiveTool] = useState('pen')
   const [color, setColor] = useState('#0d6efd')
+  const [shapeFillColor, setShapeFillColor] = useState('#dbeafe')
   const [strokeWidth, setStrokeWidth] = useState(4)
   const [zoom, setZoom] = useState(1)
   const [draftElement, setDraftElement] = useState(null)
@@ -190,6 +269,7 @@ const [textLineHeight, setTextLineHeight] = useState(1.4)
   const dragElementRef = useRef(null)
   const selectionStartRef = useRef(null)
   const resizeElementRef = useRef(null)
+  const rotateElementRef = useRef(null)
   const textEditorRef = useRef(null)
   const toolPanelRef = useRef(null)
   const toolbarToolsRef = useRef(null)
@@ -202,31 +282,137 @@ const [textLineHeight, setTextLineHeight] = useState(1.4)
   const autosaveTimerRef = useRef(null)
   const pointerModeRef = useRef(null)
   const fallbackCourse = user?.programme || 'General'
+  const token = window.localStorage.getItem('edudia_auth_token')
 
   useEffect(() => {
-    if (!user?.id) return
-    const found = getNotebookById(user.id, notebookId, fallbackCourse)
-    if (!found) {
+  if (!user?.id || !token || !notebookId) return
+
+  const loadNotebook = async () => {
+    try {
+      const response = await noteAPI.getNotebook(
+        token,
+        notebookId
+      )
+
+      const raw = response?.data?.notebook
+
+      if (!raw) {
+        navigate('/notes', { replace: true })
+        return
+      }
+
+      const found = {
+        id: raw.id,
+        name: raw.title,
+        courseName: raw.course_name,
+        folderName: raw.folder_name || 'Sans dossier',
+        color: raw.color || '#0d6efd',
+        isFavorite: Boolean(raw.is_favorite),
+        isTrashed: Boolean(raw.is_trashed),
+        sourcePdf: raw.source_pdf || null,
+        createdAt: raw.created_at,
+        updatedAt: raw.updated_at,
+        lastOpenedAt: raw.last_opened_at,
+
+        pages: (raw.pages || []).map((page) => ({
+          id: page.id,
+          title: page.title,
+          sheetType: page.sheet_type,
+          previewText: page.preview_text || '',
+          background: page.background || null,
+          createdAt: page.created_at,
+          updatedAt: page.updated_at,
+
+          elements: (page.elements || []).map(
+            (element) => ({
+              ...(element.data || {}),
+              id: element.data?.id || element.id,
+              type: element.data?.type || element.type
+            })
+          )
+        }))
+      }
+
+      setNotebook(found)
+
+      setSelectedPageId(
+        (current) =>
+          current || found.pages[0]?.id || null
+      )
+
+      await noteAPI.updateNotebook(
+        token,
+        notebookId,
+        {
+          lastOpenedAt: new Date().toISOString()
+        }
+      )
+    } catch (error) {
+      console.error(
+        'Erreur ouverture cahier PostgreSQL:',
+        error
+      )
+
       navigate('/notes', { replace: true })
-      return
     }
+  }
 
-    updateNotebookMeta(user.id, notebookId, { lastOpenedAt: new Date().toISOString() }, fallbackCourse)
-    setNotebook(found)
-    setSelectedPageId((current) => current || found.pages[0]?.id || null)
-  }, [fallbackCourse, navigate, notebookId, user?.id])
+  loadNotebook()
+}, [navigate, notebookId, token, user?.id])
 
   useEffect(() => {
-    if (!user?.id || !notebook) return
-    window.clearTimeout(autosaveTimerRef.current)
-    setSaveState('Sauvegarde...')
-    autosaveTimerRef.current = window.setTimeout(() => {
-      saveNotebookSnapshot(user.id, refreshNotebookPreview(notebook), fallbackCourse)
-      setSaveState('Sauvegarde automatique active')
-    }, 250)
+  if (!token || !notebook || !selectedPageId) return
 
-    return () => window.clearTimeout(autosaveTimerRef.current)
-  }, [fallbackCourse, notebook, user?.id])
+  window.clearTimeout(autosaveTimerRef.current)
+
+  setSaveState('Sauvegarde...')
+
+  autosaveTimerRef.current = window.setTimeout(
+    async () => {
+      try {
+        const page = notebook.pages.find(
+          (entry) => entry.id === selectedPageId
+        )
+
+        if (!page) return
+
+        await noteAPI.updatePage(
+          token,
+          notebook.id,
+          page.id,
+          {
+            title: page.title,
+            sheetType: page.sheetType,
+            previewText: page.previewText || '',
+            background: page.background || null,
+            elements: page.elements || []
+          }
+        )
+
+        setSaveState(
+          'Sauvegarde automatique active'
+        )
+      } catch (error) {
+        console.error(
+          'Erreur sauvegarde PostgreSQL:',
+          error
+        )
+
+        setSaveState('Erreur de sauvegarde')
+      }
+    },
+    500
+  )
+
+  return () =>
+    window.clearTimeout(
+      autosaveTimerRef.current
+    )
+}, [
+  notebook,
+  selectedPageId,
+  token
+])
 
   const currentPage = useMemo(() => {
     return notebook?.pages?.find((page) => page.id === selectedPageId) || notebook?.pages?.[0] || null
@@ -368,6 +554,7 @@ setTextLineHeight(nextLineHeight)
       elementId: source.id || null,
       x: Number(source.x ?? point.x),
       y: Number(source.y ?? point.y),
+      rotation: Number(source.rotation || 0),
       text: String(source.text || ''),
       fontSize: nextFontSize,
 fontFamily: nextFontFamily,
@@ -405,7 +592,13 @@ const moveElementBy = (element, deltaX, deltaY) => {
     }
   }
 
-  if (element.type === 'shape' && element.shape === 'line') {
+  if (
+  element.type === 'shape' &&
+  (
+    element.shape === 'line' ||
+    element.shape === 'arrow'
+  )
+) {
     return {
       ...element,
       x: element.x + deltaX,
@@ -420,6 +613,68 @@ const moveElementBy = (element, deltaX, deltaY) => {
     x: element.x + deltaX,
     y: element.y + deltaY
   }
+}
+
+const alignSelectedElements = (alignment) => {
+  if (!currentPage || selectedElementIds.length < 2) return
+
+  const selected = currentPage.elements.filter((element) =>
+    selectedElementIds.includes(element.id)
+  )
+
+  const bounds = selected.map(getElementBounds)
+
+  const group = {
+    left: Math.min(...bounds.map((b) => b.x)),
+    right: Math.max(...bounds.map((b) => b.x + b.width)),
+    top: Math.min(...bounds.map((b) => b.y)),
+    bottom: Math.max(...bounds.map((b) => b.y + b.height))
+  }
+
+  group.centerX = (group.left + group.right) / 2
+  group.centerY = (group.top + group.bottom) / 2
+
+  updateCurrentPage((page) => {
+    page.elements = page.elements.map((element) => {
+      if (!selectedElementIds.includes(element.id)) return element
+
+      const b = getElementBounds(element)
+
+      let dx = 0
+      let dy = 0
+
+      switch (alignment) {
+        case 'left':
+          dx = group.left - b.x
+          break
+
+        case 'center':
+          dx = group.centerX - (b.x + b.width / 2)
+          break
+
+        case 'right':
+          dx = group.right - (b.x + b.width)
+          break
+
+        case 'top':
+          dy = group.top - b.y
+          break
+
+        case 'middle':
+          dy = group.centerY - (b.y + b.height / 2)
+          break
+
+        case 'bottom':
+          dy = group.bottom - (b.y + b.height)
+          break
+
+        default:
+          return element
+      }
+
+      return moveElementBy(element, dx, dy)
+    })
+  })
 }
 
 const moveSelectedElement = (elementId, deltaX, deltaY) => {
@@ -485,7 +740,13 @@ const resizeElementFromBounds = (
     }
   }
 
-  if (element.type === 'shape' && element.shape === 'line') {
+  if (
+  element.type === 'shape' &&
+  (
+    element.shape === 'line' ||
+    element.shape === 'arrow'
+  )
+) {
     return {
       ...element,
       x:
@@ -555,7 +816,13 @@ const resizeElementFromGroupBounds = (
     }
   }
 
-  if (element.type === 'shape' && element.shape === 'line') {
+  if (
+  element.type === 'shape' &&
+  (
+    element.shape === 'line' ||
+    element.shape === 'arrow'
+  )
+) {
     const start = scalePoint(element.x, element.y)
     const end = scalePoint(element.x2, element.y2)
 
@@ -684,6 +951,62 @@ const originalElements = currentPage.elements
   event.currentTarget.setPointerCapture(event.pointerId)
 }
 
+const handleRotatePointerDown = (event) => {
+  event.preventDefault()
+  event.stopPropagation()
+
+  if (
+    !notebook ||
+    !currentPage ||
+    !selectedElementBounds
+  ) {
+    return
+  }
+
+  const idsToRotate =
+    selectedElementIds.length > 0
+      ? selectedElementIds
+      : selectedElementId
+        ? [selectedElementId]
+        : []
+
+  if (idsToRotate.length === 0) return
+
+  const originalElements = currentPage.elements
+    .filter((element) =>
+      idsToRotate.includes(element.id)
+    )
+    .map((element) => cloneNotebook(element))
+
+  const center =
+    getBoundsCenter(selectedElementBounds)
+
+  const point = getSurfacePoint(event)
+
+  historyRef.current.past.push(
+    cloneNotebook(notebook)
+  )
+
+  if (historyRef.current.past.length > 40) {
+    historyRef.current.past.shift()
+  }
+
+  historyRef.current.future = []
+
+  pointerModeRef.current = 'rotate'
+
+  rotateElementRef.current = {
+    elementIds: idsToRotate,
+    originalElements,
+    center,
+    startAngle: getPointerAngle(point, center)
+  }
+
+  event.currentTarget.setPointerCapture(
+    event.pointerId
+  )
+}
+
   const handlePointerDown = (event) => {
   if (!currentPage || editingText) return
 
@@ -754,22 +1077,34 @@ const originalElements = currentPage.elements
     if (event.shiftKey) {
   setSelectedElementIds((currentIds) =>
     currentIds.includes(selectedElement.id)
-      ? currentIds.filter((id) => id !== selectedElement.id)
+      ? currentIds.filter(
+          (id) => id !== selectedElement.id
+        )
       : [...currentIds, selectedElement.id]
   )
 
   setSelectedElementId(selectedElement.id)
 } else {
-  const groupIds = selectedElement.groupId
-    ? currentPage.elements
-        .filter(
-          (element) => element.groupId === selectedElement.groupId
-        )
-        .map((element) => element.id)
-    : [selectedElement.id]
+  const isAlreadyInMultiSelection =
+    selectedElementIds.length > 1 &&
+    selectedElementIds.includes(selectedElement.id)
 
-  setSelectedElementIds(groupIds)
-  setSelectedElementId(selectedElement.id)
+  if (isAlreadyInMultiSelection) {
+    setSelectedElementId(selectedElement.id)
+  } else {
+    const groupIds = selectedElement.groupId
+      ? currentPage.elements
+          .filter(
+            (element) =>
+              element.groupId ===
+              selectedElement.groupId
+          )
+          .map((element) => element.id)
+      : [selectedElement.id]
+
+    setSelectedElementIds(groupIds)
+    setSelectedElementId(selectedElement.id)
+  }
 }
 
     pointerModeRef.current = 'move'
@@ -814,7 +1149,15 @@ const originalElements = currentPage.elements
     if (activeTool.startsWith('shape-')) {
       surfaceRef.current?.setPointerCapture?.(event.pointerId)
       pointerModeRef.current = 'shape'
-      setDraftElement(createShapeDraft(activeTool, point, color, strokeWidth))
+      setDraftElement(
+  createShapeDraft(
+    activeTool,
+    point,
+    color,
+    strokeWidth,
+    shapeFillColor
+  )
+)
     }
   }
 
@@ -822,9 +1165,87 @@ const originalElements = currentPage.elements
     const point = getSurfacePoint(event)
 
     if (
+  pointerModeRef.current === 'rotate' &&
+  rotateElementRef.current
+) {
+  const {
+    elementIds,
+    originalElements,
+    center,
+    startAngle
+  } = rotateElementRef.current
+
+  const currentAngle =
+    getPointerAngle(point, center)
+
+  let angleDifference =
+    currentAngle - startAngle
+
+  if (event.shiftKey) {
+    angleDifference =
+      Math.round(angleDifference / 15) * 15
+  }
+
+  const originalElementsById = new Map(
+    originalElements.map((element) => [
+      element.id,
+      element
+    ])
+  )
+
+  setNotebook((previous) => {
+    if (!previous) return previous
+
+    const nextNotebook = cloneNotebook(previous)
+
+    nextNotebook.pages =
+      nextNotebook.pages.map((page) => {
+        if (page.id !== selectedPageId) {
+          return page
+        }
+
+        return {
+          ...page,
+          updatedAt: new Date().toISOString(),
+          elements: page.elements.map(
+            (element) => {
+              if (!elementIds.includes(element.id)) {
+                return element
+              }
+
+              const originalElement =
+                originalElementsById.get(
+                  element.id
+                )
+
+              if (!originalElement) {
+                return element
+              }
+
+              return {
+                ...element,
+                rotation: normalizeRotation(
+                  Number(
+                    originalElement.rotation || 0
+                  ) + angleDifference
+                )
+              }
+            }
+          )
+        }
+      })
+
+    return refreshNotebookPreview(nextNotebook)
+  })
+
+  return
+}
+
+    if (
   pointerModeRef.current === 'selection-box' &&
   selectionStartRef.current
 ) {
+
   const startPoint = selectionStartRef.current
 
   setSelectionBox({
@@ -927,15 +1348,53 @@ setNotebook((previous) => {
       }
 
       if (previous.type === 'shape') {
-        if (previous.shape === 'line') {
-          return { ...previous, x2: point.x, y2: point.y }
-        }
+  if (
+    previous.shape === 'line' ||
+    previous.shape === 'arrow'
+  ) {
+    return {
+      ...previous,
+      x2: point.x,
+      y2: point.y
+    }
+  }
 
-        return { ...previous, width: point.x - previous.x, height: point.y - previous.y }
-      }
+  const width = point.x - previous.x
+const height = point.y - previous.y
 
-      return previous
-    })
+if (event.shiftKey) {
+  const size = Math.max(
+    Math.abs(width),
+    Math.abs(height)
+  )
+
+  if (previous.shape === 'triangle') {
+    return {
+      ...previous,
+      width: Math.sign(width) * size,
+      height:
+        Math.sign(height) *
+        size *
+        (Math.sqrt(3) / 2)
+    }
+  }
+
+  return {
+    ...previous,
+    width: Math.sign(width) * size,
+    height: Math.sign(height) * size
+  }
+}
+
+return {
+  ...previous,
+  width,
+  height
+}
+}
+
+return previous
+})
   }
 
   const handlePointerUp = () => {
@@ -975,6 +1434,12 @@ setNotebook((previous) => {
   resizeElementRef.current = null
   return
 }
+    if (pointerModeRef.current === 'rotate') {
+  pointerModeRef.current = null
+  rotateElementRef.current = null
+  return
+}
+
     if (pointerModeRef.current === 'move') {
     pointerModeRef.current = null
     dragElementRef.current = null
@@ -1028,6 +1493,7 @@ setNotebook((previous) => {
   type: 'text',
   x: editingText.x,
   y: editingText.y,
+  rotation: Number(editingText.rotation || 0),
   text: normalizedText,
 
   fontSize: Number(editingText.fontSize || textFontSize || 20),
@@ -1141,27 +1607,255 @@ setNotebook((previous) => {
     event.target.value = ''
   }
 
-  const addPage = () => {
-    const updatedNotebook = addNotebookPage(
-      user.id,
+  const addPage = async () => {
+  if (!token || !notebook) return
+
+  try {
+    const response = await noteAPI.createPage(
+      token,
       notebook.id,
-      { title: `Page ${notebook.pages.length + 1}`, sheetType: currentPage?.sheetType || 'lined' },
-      fallbackCourse
+      {
+        title: `Page ${notebook.pages.length + 1}`,
+        sheetType: currentPage?.sheetType || 'lined'
+      }
     )
+
+    const rawPage = response?.data?.page
+
+    if (!rawPage) {
+      throw new Error('Page non retournée par le serveur.')
+    }
+
+    const newPage = {
+      id: rawPage.id,
+      title: rawPage.title,
+      sheetType: rawPage.sheet_type,
+      previewText: rawPage.preview_text || '',
+      background: rawPage.background || null,
+      createdAt: rawPage.created_at,
+      updatedAt: rawPage.updated_at,
+      elements: []
+    }
+
+    setNotebook((previous) => ({
+      ...previous,
+      pages: [...previous.pages, newPage]
+    }))
+
+    setSelectedPageId(newPage.id)
+  } catch (error) {
+    console.error(
+      'Erreur création page PostgreSQL:',
+      error
+    )
+
+    window.alert(
+      'Impossible de créer la nouvelle page.'
+    )
+  }
+}
+
+  const duplicatePage = async () => {
+  if (!token || !notebook || !currentPage) return
+
+  try {
+    // 1. Créer la nouvelle page dans PostgreSQL
+    const createResponse = await noteAPI.createPage(
+      token,
+      notebook.id,
+      {
+        title: `${currentPage.title} copie`,
+        sheetType: currentPage.sheetType || 'lined',
+        background: currentPage.background || null
+      }
+    )
+
+    const rawPage = createResponse?.data?.page
+
+    if (!rawPage?.id) {
+      throw new Error(
+        'La nouvelle page n’a pas été retournée.'
+      )
+    }
+
+    // 2. Copier le contenu de la page originale
+    const saveResponse = await noteAPI.updatePage(
+      token,
+      notebook.id,
+      rawPage.id,
+      {
+        title: `${currentPage.title} copie`,
+        sheetType: currentPage.sheetType || 'lined',
+        previewText: currentPage.previewText || '',
+        background: currentPage.background || null,
+        elements: currentPage.elements || []
+      }
+    )
+
+    // 3. Recharger le cahier depuis PostgreSQL
+    const rawNotebook =
+      saveResponse?.data?.notebook
+
+    if (!rawNotebook) {
+      throw new Error(
+        'Le cahier mis à jour est introuvable.'
+      )
+    }
+
+    const updatedNotebook = {
+      id: rawNotebook.id,
+      name: rawNotebook.title,
+      courseName: rawNotebook.course_name,
+      folderName:
+        rawNotebook.folder_name || 'Sans dossier',
+      color: rawNotebook.color || '#0d6efd',
+      isFavorite:
+        Boolean(rawNotebook.is_favorite),
+      isTrashed:
+        Boolean(rawNotebook.is_trashed),
+      sourcePdf:
+        rawNotebook.source_pdf || null,
+      createdAt:
+        rawNotebook.created_at,
+      updatedAt:
+        rawNotebook.updated_at,
+      lastOpenedAt:
+        rawNotebook.last_opened_at,
+
+      pages: (rawNotebook.pages || []).map(
+        (page) => ({
+          id: page.id,
+          title: page.title,
+          sheetType: page.sheet_type,
+          previewText: page.preview_text || '',
+          background: page.background || null,
+          createdAt: page.created_at,
+          updatedAt: page.updated_at,
+
+          elements: (page.elements || []).map(
+            (element) => ({
+              ...(element.data || {}),
+              id:
+                element.data?.id ||
+                element.id,
+              type:
+                element.data?.type ||
+                element.type
+            })
+          )
+        })
+      )
+    }
+
     setNotebook(updatedNotebook)
-    setSelectedPageId(updatedNotebook.pages[updatedNotebook.pages.length - 1].id)
+    setSelectedPageId(rawPage.id)
+  } catch (error) {
+    console.error(
+      'Erreur duplication page PostgreSQL:',
+      error
+    )
+
+    window.alert(
+      'Impossible de dupliquer la page.'
+    )
+  }
+}
+
+  const deletePage = async () => {
+  if (!token || !notebook || !selectedPageId) return
+
+  if (notebook.pages.length <= 1) {
+    window.alert(
+      'Un cahier doit contenir au moins une page.'
+    )
+    return
   }
 
-  const duplicatePage = () => {
-    const updatedNotebook = duplicateNotebookPage(user.id, notebook.id, selectedPageId, fallbackCourse)
-    setNotebook(updatedNotebook)
-  }
+  try {
+    const response = await noteAPI.deletePage(
+      token,
+      notebook.id,
+      selectedPageId
+    )
 
-  const deletePage = () => {
-    const updatedNotebook = deleteNotebookPage(user.id, notebook.id, selectedPageId, fallbackCourse)
+    const rawNotebook =
+      response?.data?.notebook
+
+    if (!rawNotebook) {
+      throw new Error(
+        'Le cahier mis à jour est introuvable.'
+      )
+    }
+
+    const updatedNotebook = {
+      id: rawNotebook.id,
+      name: rawNotebook.title,
+      courseName: rawNotebook.course_name,
+      folderName:
+        rawNotebook.folder_name || 'Sans dossier',
+      color:
+        rawNotebook.color || '#0d6efd',
+      isFavorite:
+        Boolean(rawNotebook.is_favorite),
+      isTrashed:
+        Boolean(rawNotebook.is_trashed),
+      sourcePdf:
+        rawNotebook.source_pdf || null,
+      createdAt:
+        rawNotebook.created_at,
+      updatedAt:
+        rawNotebook.updated_at,
+      lastOpenedAt:
+        rawNotebook.last_opened_at,
+
+      pages: (rawNotebook.pages || []).map(
+        (page) => ({
+          id: page.id,
+          title: page.title,
+          sheetType: page.sheet_type,
+          previewText: page.preview_text || '',
+          background: page.background || null,
+          createdAt: page.created_at,
+          updatedAt: page.updated_at,
+
+          elements: (page.elements || []).map(
+            (element) => ({
+              ...(element.data || {}),
+              id:
+                element.data?.id ||
+                element.id,
+              type:
+                element.data?.type ||
+                element.type
+            })
+          )
+        })
+      )
+    }
+
+    const nextIndex = Math.max(
+      0,
+      currentPageIndex - 1
+    )
+
     setNotebook(updatedNotebook)
-    setSelectedPageId(updatedNotebook.pages[Math.max(0, currentPageIndex - 1)]?.id || updatedNotebook.pages[0]?.id)
+
+    setSelectedPageId(
+      updatedNotebook.pages[nextIndex]?.id ||
+      updatedNotebook.pages[0]?.id ||
+      null
+    )
+  } catch (error) {
+    console.error(
+      'Erreur suppression page PostgreSQL:',
+      error
+    )
+
+    window.alert(
+      'Impossible de supprimer cette page.'
+    )
   }
+}
 
   const handleSheetTypeChange = (nextSheetType) => {
     updateCurrentPage((page) => {
@@ -1183,7 +1877,7 @@ setNotebook((previous) => {
     }
 
     if (toolId === 'arrow') {
-      setActiveTool('shape-line')
+      setActiveTool('shape-arrow')
       setShowToolPanel(true)
       setShowExtrasMenu(false)
       return
@@ -1197,48 +1891,214 @@ setNotebook((previous) => {
   }
 
   const handlePdfImportSelection = async (event) => {
-    const file = event.target.files?.[0]
-    if (!file) return
+  const file = event.target.files?.[0]
 
-    const lowerName = file.name.toLowerCase()
-    const isPdfByType = file.type === 'application/pdf'
-    const isPdfByExtension = lowerName.endsWith('.pdf')
-    if (!isPdfByType && !isPdfByExtension) {
-      window.alert('Seuls les fichiers PDF (.pdf) sont acceptes.')
-      event.target.value = ''
+  if (!file || !token || !notebook) return
+
+  const lowerName = file.name.toLowerCase()
+  const isPdfByType =
+    file.type === 'application/pdf'
+  const isPdfByExtension =
+    lowerName.endsWith('.pdf')
+
+  if (!isPdfByType && !isPdfByExtension) {
+    window.alert(
+      'Seuls les fichiers PDF (.pdf) sont acceptés.'
+    )
+
+    event.target.value = ''
+    return
+  }
+
+  setIsPreparingImport(true)
+  setSaveState('Import PDF...')
+
+  try {
+    const imported =
+      await importPdfAsNotebookPages(file)
+
+    if (
+      !Array.isArray(imported.pages) ||
+      imported.pages.length === 0
+    ) {
+      window.alert(
+        'Le PDF ne contient aucune page importable.'
+      )
       return
     }
 
-    setIsPreparingImport(true)
-    setSaveState('Import PDF...')
+    let firstImportedPageId = null
 
-    try {
-      const imported = await importPdfAsNotebookPages(file)
-      if (!Array.isArray(imported.pages) || imported.pages.length === 0) {
-        window.alert('Le PDF ne contient aucune page importable.')
-        return
+    for (
+      let index = 0;
+      index < imported.pages.length;
+      index += 1
+    ) {
+      const importedPage =
+        imported.pages[index]
+
+      const createResponse =
+        await noteAPI.createPage(
+          token,
+          notebook.id,
+          {
+            title:
+              importedPage.title ||
+              `Page ${notebook.pages.length + index + 1}`,
+
+            sheetType:
+              importedPage.sheetType ||
+              'blank',
+
+            background:
+              importedPage.background ||
+              null
+          }
+        )
+
+      const newPage =
+        createResponse?.data?.page
+
+      if (!newPage?.id) {
+        throw new Error(
+          `Impossible de créer la page ${index + 1}.`
+        )
       }
 
-      const importedPages = imported.pages.map((page, index) => createImportedPage(page, index))
-      const firstImportedPageId = importedPages[0].id
+      await noteAPI.updatePage(
+        token,
+        notebook.id,
+        newPage.id,
+        {
+          title:
+            importedPage.title ||
+            `Page ${notebook.pages.length + index + 1}`,
 
-      commitNotebookMutation((draftNotebook) => {
-        draftNotebook.pages = [...draftNotebook.pages, ...importedPages]
-      })
+          sheetType:
+            importedPage.sheetType ||
+            'blank',
 
-      setSelectedPageId(firstImportedPageId)
-      setShowMobilePages(false)
-      setSaveState('PDF importe')
-    } catch {
-      setSaveState('Import impossible')
-      window.alert('Import impossible. Verifiez le fichier PDF et reessayez.')
-    } finally {
-      window.setTimeout(() => setSaveState('Sauvegarde automatique active'), 1200)
-      setIsPreparingImport(false)
+          previewText:
+            importedPage.previewText ||
+            '',
+
+          background:
+            importedPage.background ||
+            null,
+
+          elements:
+            importedPage.elements ||
+            []
+        }
+      )
+
+      if (!firstImportedPageId) {
+        firstImportedPageId = newPage.id
+      }
     }
 
+    // Recharger le cahier complet depuis PostgreSQL
+    const response =
+      await noteAPI.getNotebook(
+        token,
+        notebook.id
+      )
+
+    const raw =
+      response?.data?.notebook
+
+    if (!raw) {
+      throw new Error(
+        'Impossible de recharger le cahier.'
+      )
+    }
+
+    const updatedNotebook = {
+      id: raw.id,
+      name: raw.title,
+      courseName: raw.course_name,
+      folderName:
+        raw.folder_name || 'Sans dossier',
+      color:
+        raw.color || '#0d6efd',
+      isFavorite:
+        Boolean(raw.is_favorite),
+      isTrashed:
+        Boolean(raw.is_trashed),
+      sourcePdf:
+        raw.source_pdf || null,
+      createdAt:
+        raw.created_at,
+      updatedAt:
+        raw.updated_at,
+      lastOpenedAt:
+        raw.last_opened_at,
+
+      pages: (raw.pages || []).map(
+        (page) => ({
+          id: page.id,
+          title: page.title,
+          sheetType: page.sheet_type,
+          previewText:
+            page.preview_text || '',
+          background:
+            page.background || null,
+          createdAt:
+            page.created_at,
+          updatedAt:
+            page.updated_at,
+
+          elements:
+            (page.elements || []).map(
+              (element) => ({
+                ...(element.data || {}),
+                id:
+                  element.data?.id ||
+                  element.id,
+                type:
+                  element.data?.type ||
+                  element.type
+              })
+            )
+        })
+      )
+    }
+
+    setNotebook(updatedNotebook)
+
+    setSelectedPageId(
+      firstImportedPageId ||
+      updatedNotebook.pages[0]?.id ||
+      null
+    )
+
+    setShowMobilePages(false)
+    setSaveState('PDF importé')
+  } catch (error) {
+    console.error(
+      'Erreur import PDF PostgreSQL:',
+      error
+    )
+
+    setSaveState('Import impossible')
+
+    window.alert(
+      error.message ||
+      'Import impossible. Vérifiez le fichier PDF et réessayez.'
+    )
+  } finally {
+    window.setTimeout(
+      () =>
+        setSaveState(
+          'Sauvegarde automatique active'
+        ),
+      1200
+    )
+
+    setIsPreparingImport(false)
     event.target.value = ''
   }
+}
 
   const handleExportPdf = async () => {
     if (!notebook || isExportingPdf) return
@@ -1414,12 +2274,17 @@ if (arrowKeys.includes(event.key)) {
         : 0
 
   updateCurrentPage((page) => {
-    page.elements = page.elements.map((element) =>
-      element.id === selectedElementId
-        ? moveElementBy(element, deltaX, deltaY)
-        : element
-    )
+  page.elements = page.elements.map((element) => {
+    const shouldMove =
+      selectedElementIds.length > 0
+        ? selectedElementIds.includes(element.id)
+        : element.id === selectedElementId
+
+    return shouldMove
+      ? moveElementBy(element, deltaX, deltaY)
+      : element
   })
+})
 
   return
 }
@@ -1703,6 +2568,80 @@ setSelectedElementIds([])
             </Button>
           </ButtonGroup>
 
+{activeTool === 'select' &&
+  selectedElementIds.length > 1 && (
+    <ButtonGroup
+      className="notes-tool-strip"
+      aria-label="Alignement des objets"
+    >
+      <Button
+        type="button"
+        variant="light"
+        className="notes-tool-button"
+        onClick={() => alignSelectedElements('left')}
+        title="Aligner à gauche"
+        aria-label="Aligner à gauche"
+      >
+        ⇤
+      </Button>
+
+      <Button
+        type="button"
+        variant="light"
+        className="notes-tool-button"
+        onClick={() => alignSelectedElements('center')}
+        title="Centrer horizontalement"
+        aria-label="Centrer horizontalement"
+      >
+        ↔
+      </Button>
+
+      <Button
+        type="button"
+        variant="light"
+        className="notes-tool-button"
+        onClick={() => alignSelectedElements('right')}
+        title="Aligner à droite"
+        aria-label="Aligner à droite"
+      >
+        ⇥
+      </Button>
+
+      <Button
+        type="button"
+        variant="light"
+        className="notes-tool-button"
+        onClick={() => alignSelectedElements('top')}
+        title="Aligner en haut"
+        aria-label="Aligner en haut"
+      >
+        ⇡
+      </Button>
+
+      <Button
+        type="button"
+        variant="light"
+        className="notes-tool-button"
+        onClick={() => alignSelectedElements('middle')}
+        title="Centrer verticalement"
+        aria-label="Centrer verticalement"
+      >
+        ↕
+      </Button>
+
+      <Button
+        type="button"
+        variant="light"
+        className="notes-tool-button"
+        onClick={() => alignSelectedElements('bottom')}
+        title="Aligner en bas"
+        aria-label="Aligner en bas"
+      >
+        ⇣
+      </Button>
+    </ButtonGroup>
+  )}
+  
           {showExtrasMenu && (
             <div className="notes-extras-menu" ref={extrasMenuRef}>
               <button type="button" onClick={() => handleExtraToolSelect('shape-rectangle')}>
@@ -1711,6 +2650,45 @@ setSelectedElementIds([])
               <button type="button" onClick={() => handleExtraToolSelect('shape-ellipse')}>
                 <Circle size={15} /> Cercle
               </button>
+              <button
+  type="button"
+  onClick={() =>
+    handleExtraToolSelect('shape-triangle')
+  }
+>
+  <span aria-hidden="true">△</span>
+  Triangle
+</button>
+
+<button
+  type="button"
+  onClick={() =>
+    handleExtraToolSelect('shape-diamond')
+  }
+>
+  <span aria-hidden="true">◇</span>
+  Losange
+</button>
+
+<button
+  type="button"
+  onClick={() =>
+    handleExtraToolSelect('shape-star')
+  }
+>
+  <span aria-hidden="true">☆</span>
+  Étoile
+</button>
+
+<button
+  type="button"
+  onClick={() =>
+    handleExtraToolSelect('shape-heart')
+  }
+>
+  <span aria-hidden="true">♡</span>
+  Cœur
+</button>
               <button type="button" onClick={() => handleExtraToolSelect('shape-line')}>
                 <Slash size={15} /> Ligne
               </button>
@@ -1807,6 +2785,75 @@ setSelectedElementIds([])
                     <Form.Range className="notes-compact-range" min={2} max={20} value={strokeWidth} onChange={(event) => setStrokeWidth(Number(event.target.value))} />
                   </div>
                 )}
+                
+{activeTool.startsWith('shape-') &&
+  activeTool !== 'shape-line' &&
+  activeTool !== 'shape-arrow' && (
+    <div className="notes-tool-panel__section">
+      <div className="notes-tool-panel__label">
+        Couleur de remplissage
+      </div>
+
+      <div className="notes-color-palette">
+        <button
+          type="button"
+          className={`notes-color-dot ${
+            shapeFillColor === 'transparent'
+              ? 'is-active'
+              : ''
+          }`}
+          style={{
+            '--dot-color': 'transparent',
+            background:
+              'linear-gradient(135deg, transparent 43%, #ef4444 44%, #ef4444 56%, transparent 57%)'
+          }}
+          onClick={() =>
+            setShapeFillColor('transparent')
+          }
+          title="Sans remplissage"
+          aria-label="Sans remplissage"
+        />
+
+        {COLOR_PRESETS.map((preset) => (
+          <button
+            key={`fill-${preset}`}
+            type="button"
+            className={`notes-color-dot ${
+              shapeFillColor === preset
+                ? 'is-active'
+                : ''
+            }`}
+            style={{ '--dot-color': preset }}
+            onClick={() =>
+              setShapeFillColor(preset)
+            }
+            title={`Remplissage ${preset}`}
+            aria-label={`Remplissage ${preset}`}
+          />
+        ))}
+
+        <label
+          className="notes-color-add"
+          title="Couleur de remplissage personnalisée"
+          aria-label="Couleur de remplissage personnalisée"
+        >
+          +
+
+          <input
+            type="color"
+            value={
+              shapeFillColor === 'transparent'
+                ? '#ffffff'
+                : shapeFillColor
+            }
+            onChange={(event) =>
+              setShapeFillColor(event.target.value)
+            }
+          />
+        </label>
+      </div>
+    </div>
+  )}
 
                 {(activeTool === 'text' || Boolean(editingText)) && (
                   <>
@@ -2065,6 +3112,7 @@ step={1}
                       return (
                         <path
                           key={element.id}
+                          transform={getElementRotationTransform(element)}
                           d={buildStrokePath(element.points)}
                           fill="none"
                           stroke={element.color}
@@ -2082,6 +3130,7 @@ step={1}
                         return (
                           <ellipse
                             key={element.id}
+                            transform={getElementRotationTransform(element)}
                             cx={bounds.x + bounds.width / 2}
                             cy={bounds.y + bounds.height / 2}
                             rx={bounds.width / 2}
@@ -2093,10 +3142,140 @@ step={1}
                         )
                       }
 
+                        if (element.shape === 'triangle') {
+  const bounds = normalizeShapeBounds(element)
+
+  const points = [
+    `${bounds.x + bounds.width / 2},${bounds.y}`,
+    `${bounds.x + bounds.width},${bounds.y + bounds.height}`,
+    `${bounds.x},${bounds.y + bounds.height}`
+  ].join(' ')
+
+  return (
+    <polygon
+      key={element.id}
+      transform={getElementRotationTransform(element)}
+      points={points}
+      stroke={element.color}
+      strokeWidth={element.strokeWidth || 3}
+      fill={element.fill || 'transparent'}
+      strokeLinejoin="round"
+    />
+  )
+}
+
+if (element.shape === 'diamond') {
+  const bounds = normalizeShapeBounds(element)
+
+  const points = [
+    `${bounds.x + bounds.width / 2},${bounds.y}`,
+    `${bounds.x + bounds.width},${bounds.y + bounds.height / 2}`,
+    `${bounds.x + bounds.width / 2},${bounds.y + bounds.height}`,
+    `${bounds.x},${bounds.y + bounds.height / 2}`
+  ].join(' ')
+
+  return (
+    <polygon
+      key={element.id}
+      transform={getElementRotationTransform(element)}
+      points={points}
+      stroke={element.color}
+      strokeWidth={element.strokeWidth || 3}
+      fill={element.fill || 'transparent'}
+      strokeLinejoin="round"
+    />
+  )
+}
+
+if (element.shape === 'star') {
+  const bounds = normalizeShapeBounds(element)
+
+  return (
+    <polygon
+      key={element.id}
+      transform={getElementRotationTransform(element)}
+      points={buildStarPoints(bounds)}
+      stroke={element.color}
+      strokeWidth={element.strokeWidth || 3}
+      fill={element.fill || 'transparent'}
+      strokeLinejoin="round"
+    />
+  )
+}
+
+if (element.shape === 'heart') {
+  const bounds = normalizeShapeBounds(element)
+
+  return (
+    <path
+      key={element.id}
+      transform={getElementRotationTransform(element)}
+      d={buildHeartPath(bounds)}
+      stroke={element.color}
+      strokeWidth={element.strokeWidth || 3}
+      fill={element.fill || 'transparent'}
+      strokeLinejoin="round"
+    />
+  )
+}
+
+if (element.shape === 'arrow') {
+
+  const headSize = element.arrowHeadSize || 18
+
+  const angle = Math.atan2(
+    element.y2 - element.y,
+    element.x2 - element.x
+  )
+
+  const leftX =
+    element.x2 -
+    headSize * Math.cos(angle - Math.PI / 6)
+
+  const leftY =
+    element.y2 -
+    headSize * Math.sin(angle - Math.PI / 6)
+
+  const rightX =
+    element.x2 -
+    headSize * Math.cos(angle + Math.PI / 6)
+
+  const rightY =
+    element.y2 -
+    headSize * Math.sin(angle + Math.PI / 6)
+
+  return (
+    <g
+  key={element.id}
+  transform={getElementRotationTransform(element)}
+>
+      <line
+        x1={element.x}
+        y1={element.y}
+        x2={element.x2}
+        y2={element.y2}
+        stroke={element.color}
+        strokeWidth={element.strokeWidth || 3}
+        strokeLinecap="round"
+      />
+
+      <polyline
+        points={`${leftX},${leftY} ${element.x2},${element.y2} ${rightX},${rightY}`}
+        fill="none"
+        stroke={element.color}
+        strokeWidth={element.strokeWidth || 3}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </g>
+  )
+}
+
                       if (element.shape === 'line') {
                         return (
                           <line
                             key={element.id}
+                            transform={getElementRotationTransform(element)}
                             x1={element.x}
                             y1={element.y}
                             x2={element.x2}
@@ -2112,6 +3291,7 @@ step={1}
                       return (
                         <rect
                           key={element.id}
+                          transform={getElementRotationTransform(element)}
                           x={bounds.x}
                           y={bounds.y}
                           width={bounds.width}
@@ -2125,7 +3305,18 @@ step={1}
                     }
 
                     if (element.type === 'image') {
-                      return <image key={element.id} href={element.src} x={element.x} y={element.y} width={element.width} height={element.height} preserveAspectRatio="xMidYMid slice" />
+                      return (
+  <image
+    key={element.id}
+    transform={getElementRotationTransform(element)}
+    href={element.src}
+    x={element.x}
+    y={element.y}
+    width={element.width}
+    height={element.height}
+    preserveAspectRatio="xMidYMid slice"
+  />
+)
                     }
 
                     return null
@@ -2154,6 +3345,57 @@ step={1}
                       strokeLinecap="round"
                     />
                   )}
+
+                  {draftElement?.type === 'shape' &&
+  draftElement.shape === 'arrow' &&
+  (() => {
+    const headSize =
+      draftElement.arrowHeadSize || 18
+
+    const angle = Math.atan2(
+      draftElement.y2 - draftElement.y,
+      draftElement.x2 - draftElement.x
+    )
+
+    const leftX =
+      draftElement.x2 -
+      headSize * Math.cos(angle - Math.PI / 6)
+
+    const leftY =
+      draftElement.y2 -
+      headSize * Math.sin(angle - Math.PI / 6)
+
+    const rightX =
+      draftElement.x2 -
+      headSize * Math.cos(angle + Math.PI / 6)
+
+    const rightY =
+      draftElement.y2 -
+      headSize * Math.sin(angle + Math.PI / 6)
+
+    return (
+      <g>
+        <line
+          x1={draftElement.x}
+          y1={draftElement.y}
+          x2={draftElement.x2}
+          y2={draftElement.y2}
+          stroke={draftElement.color}
+          strokeWidth={draftElement.strokeWidth}
+          strokeLinecap="round"
+        />
+
+        <polyline
+          points={`${leftX},${leftY} ${draftElement.x2},${draftElement.y2} ${rightX},${rightY}`}
+          fill="none"
+          stroke={draftElement.color}
+          strokeWidth={draftElement.strokeWidth}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      </g>
+    )
+  })()}
 
                   {draftElement?.type === 'shape' && draftElement.shape === 'rectangle' && (() => {
                     const bounds = normalizeShapeBounds(draftElement)
@@ -2185,6 +3427,84 @@ step={1}
                       />
                     )
                   })()}
+
+                  {draftElement?.type === 'shape' &&
+  draftElement.shape === 'triangle' &&
+  (() => {
+    const bounds = normalizeShapeBounds(draftElement)
+
+    const points = [
+      `${bounds.x + bounds.width / 2},${bounds.y}`,
+      `${bounds.x + bounds.width},${bounds.y + bounds.height}`,
+      `${bounds.x},${bounds.y + bounds.height}`
+    ].join(' ')
+
+    return (
+      <polygon
+        points={points}
+        stroke={draftElement.color}
+        strokeWidth={draftElement.strokeWidth}
+        fill={draftElement.fill}
+        strokeLinejoin="round"
+      />
+    )
+  })()}
+
+  {draftElement?.type === 'shape' &&
+  draftElement.shape === 'diamond' &&
+  (() => {
+    const bounds = normalizeShapeBounds(draftElement)
+
+    const points = [
+      `${bounds.x + bounds.width / 2},${bounds.y}`,
+      `${bounds.x + bounds.width},${bounds.y + bounds.height / 2}`,
+      `${bounds.x + bounds.width / 2},${bounds.y + bounds.height}`,
+      `${bounds.x},${bounds.y + bounds.height / 2}`
+    ].join(' ')
+
+    return (
+      <polygon
+        points={points}
+        stroke={draftElement.color}
+        strokeWidth={draftElement.strokeWidth}
+        fill={draftElement.fill}
+        strokeLinejoin="round"
+      />
+    )
+  })()}
+
+  {draftElement?.type === 'shape' &&
+  draftElement.shape === 'star' &&
+  (() => {
+    const bounds = normalizeShapeBounds(draftElement)
+
+    return (
+      <polygon
+        points={buildStarPoints(bounds)}
+        stroke={draftElement.color}
+        strokeWidth={draftElement.strokeWidth}
+        fill={draftElement.fill}
+        strokeLinejoin="round"
+      />
+    )
+  })()}
+
+  {draftElement?.type === 'shape' &&
+  draftElement.shape === 'heart' &&
+  (() => {
+    const bounds = normalizeShapeBounds(draftElement)
+
+    return (
+      <path
+        d={buildHeartPath(bounds)}
+        stroke={draftElement.color}
+        strokeWidth={draftElement.strokeWidth}
+        fill={draftElement.fill}
+        strokeLinejoin="round"
+      />
+    )
+  })()}
+
                   {activeTool === 'select' && (
   <>
     {selectedElementBounds && (
@@ -2199,6 +3519,48 @@ step={1}
     strokeDasharray="10 6"
     pointerEvents="none"
   />
+)}
+
+{selectedElementBounds && (
+  <>
+    <line
+      x1={
+        selectedElementBounds.x +
+        selectedElementBounds.width / 2
+      }
+      y1={selectedElementBounds.y}
+      x2={
+        selectedElementBounds.x +
+        selectedElementBounds.width / 2
+      }
+      y2={selectedElementBounds.y - 42}
+      stroke="#0d6efd"
+      strokeWidth="3"
+      pointerEvents="none"
+    />
+
+    <circle
+      data-rotate-handle="true"
+      cx={
+        selectedElementBounds.x +
+        selectedElementBounds.width / 2
+      }
+      cy={selectedElementBounds.y - 52}
+      r="13"
+      fill="#ffffff"
+      stroke="#0d6efd"
+      strokeWidth="4"
+      pointerEvents="all"
+      style={{
+        cursor: 'grab',
+        touchAction: 'none'
+      }}
+      onPointerDown={handleRotatePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerUp}
+      onPointerCancel={handlePointerUp}
+    />
+  </>
 )}
 
     {selectedElementBounds && (
@@ -2262,7 +3624,9 @@ opacity: element.opacity ?? 1,
 lineHeight: element.lineHeight || 1.4,
 textAlign: element.align || 'left',
 whiteSpace: 'pre-wrap',
-overflowWrap: 'break-word'
+overflowWrap: 'break-word',
+transform: `rotate(${Number(element.rotation || 0)}deg)`,
+transformOrigin: 'center center'
                       }}
                     >
                       {element.text}
@@ -2283,10 +3647,12 @@ fontSize: `${editingText.fontSize || 20}px`,
 fontFamily: editingText.fontFamily || DEFAULT_TEXT_FONT,
 fontWeight: editingText.fontWeight || 'normal',
 fontStyle: editingText.fontStyle || 'normal',
-textDecoration: editingText.textDecoration || 'none',
+textDecoration: editingText.textDecoration || 'no ne',
 opacity: editingText.opacity ?? 1,
 lineHeight: editingText.lineHeight || 1.4,
-textAlign: editingText.align || 'left'
+textAlign: editingText.align || 'left',
+transform: `rotate(${Number(editingText.rotation || 0)}deg)`,
+transformOrigin: 'center center'
                     }}
                     value={editingText.text}
                     onChange={(event) => setEditingText((current) => ({ ...current, text: event.target.value }))}

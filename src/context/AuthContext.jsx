@@ -1,5 +1,9 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react'
-import { authApi, subscriptionApi } from '../services/api.js'
+import {
+  authApi,
+  subscriptionApi,
+  userAPI
+} from '../services/api.js'
 
 const AuthContext = createContext(null)
 const AUTH_TOKEN_KEY = 'edudia_auth_token'
@@ -46,7 +50,8 @@ const buildBadges = (profile) => {
 const mapBackendUser = (input) => {
   if (!input) return null
   const firstName = String(input.first_name || input.firstName || '').trim()
-  const lastName = String(input.last_name || input.lastName || '').trim()
+const rawLastName = String(input.last_name || input.lastName || '').trim()
+const lastName = rawLastName.toLowerCase() === 'edudia' ? '' : rawLastName
   const points = Number(input.points || 0)
   const subscriptionStatus = input.subscription_status || input.subscriptionStatus || 'inactive'
   const subscriptionType = input.subscription_type || input.subscriptionType || ''
@@ -57,10 +62,18 @@ const mapBackendUser = (input) => {
   const autoRenew = typeof input.auto_renew === 'boolean' ? input.auto_renew : Boolean(input.autoRenew)
 
   return {
-    id: input.id,
-    nom: `${firstName} ${lastName}`.trim() || 'Etudiant',
-    email: input.email,
-    programme: input.program || input.programme || '',
+  id: input.id,
+  firstName,
+  lastName,
+  nom: `${firstName} ${lastName}`.trim() || 'Etudiant',
+  email: input.email,
+  school: input.school || '',
+  programme: input.program || input.programme || '',
+  session: input.session || '',
+  profilePhotoUrl:
+    input.profile_photo_url ||
+    input.profilePhotoUrl ||
+    '',
     subscriptionStatus,
     subscriptionType,
     trialStart,
@@ -361,25 +374,119 @@ export function AuthProvider({ children }) {
     }
   }
 
-  const updateProgramme = (programme) => {
-    const normalizedProgramme = String(programme || '').trim()
-    if (!normalizedProgramme) return { success: false, message: 'Programme invalide.' }
+  const updateProgramme = async (programme) => {
+  const normalizedProgramme =
+    String(programme || '').trim()
 
-    let updatedUser = null
-    setUser((previous) => {
-      if (!previous) return previous
-      updatedUser = { ...previous, programme: normalizedProgramme }
-      window.localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(updatedUser))
-      upsertCompatUser(updatedUser)
-      return updatedUser
-    })
+  if (!normalizedProgramme) {
+    return {
+      success: false,
+      message: 'Programme invalide.'
+    }
+  }
 
-    if (!updatedUser) {
-      return { success: false, message: 'Utilisateur non connecte.' }
+  try {
+    const token = getAuthToken()
+
+    if (!token) {
+      return {
+        success: false,
+        message:
+          'Session invalide. Veuillez vous reconnecter.'
+      }
     }
 
-    return { success: true, user: updatedUser }
+    const response = await userAPI.updateProfile(
+      token,
+      {
+        program: normalizedProgramme
+      }
+    )
+
+    const mappedUser = mapBackendUser(
+      response?.data?.user
+    )
+
+    if (!mappedUser) {
+      return {
+        success: false,
+        message:
+          'La réponse du serveur est incomplète.'
+      }
+    }
+
+    setUser(mappedUser)
+    persistSession({
+      token,
+      user: mappedUser
+    })
+    upsertCompatUser(mappedUser)
+
+    return {
+      success: true,
+      user: mappedUser
+    }
+  } catch (error) {
+    return {
+      success: false,
+      message:
+        error.message ||
+        'Impossible de mettre à jour le programme.'
+    }
   }
+}
+
+const updateProfile = async (profileData) => {
+  try {
+    const token = getAuthToken()
+
+    if (!token) {
+      return {
+        success: false,
+        message:
+          'Session invalide. Veuillez vous reconnecter.'
+      }
+    }
+
+    const response = await userAPI.updateProfile(
+      token,
+      profileData
+    )
+
+    const mappedUser = mapBackendUser(
+      response?.data?.user
+    )
+
+    if (!mappedUser) {
+      return {
+        success: false,
+        message:
+          'La réponse du serveur est incomplète.'
+      }
+    }
+
+    setUser(mappedUser)
+
+    persistSession({
+      token,
+      user: mappedUser
+    })
+
+    upsertCompatUser(mappedUser)
+
+    return {
+      success: true,
+      user: mappedUser
+    }
+  } catch (error) {
+    return {
+      success: false,
+      message:
+        error.message ||
+        'Impossible de modifier le profil.'
+    }
+  }
+}
 
   const clearAuthNotice = () => {
     setAuthNotice('')
@@ -394,11 +501,12 @@ export function AuthProvider({ children }) {
       authNotice,
       clearAuthNotice,
       login,
-      register,
-      logout,
-      activateSubscription,
-      deactivateSubscription,
-      updateProgramme
+register,
+logout,
+activateSubscription,
+deactivateSubscription,
+updateProgramme,
+updateProfile
     }),
     [user, ready, loading, authNotice]
   )

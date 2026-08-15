@@ -161,7 +161,7 @@ main { min-height: calc(100vh - 170px); }
   width: 100%;
   min-height: 900px;
   display: grid;
-  grid-template-columns: 70px repeat(5, 1fr);
+  grid-template-columns: 70px repeat(7, 1fr);
   gap: 0;
   background: #ffffff;
   border-radius: 1rem;
@@ -220,7 +220,7 @@ main { min-height: calc(100vh - 170px); }
 .agenda-grid-body {
   grid-column: 1 / -1;
   display: grid;
-  grid-template-columns: 70px repeat(5, 1fr);
+  grid-template-columns: 70px repeat(7, 1fr);
   height: 840px;
   position: relative;
 }
@@ -593,7 +593,7 @@ main { min-height: calc(100vh - 170px); }
 }
 
 .agenda-week-body {
-  min-width: 760px;
+  min-width: 1100px;
 }
 
 @media (min-width: 1024px) {
@@ -708,7 +708,7 @@ main { min-height: calc(100vh - 170px); }
   }
 
   .agenda-page-shell .agenda-week-body {
-    min-width: 780px;
+    min-width: 1100px;
   }
 
   .agenda-page-shell .agenda-toolbar-actions {
@@ -862,12 +862,13 @@ main { min-height: calc(100vh - 170px); }
   }
 
   .notes-editor-toolbar__group--tools {
-    justify-content: center;
-    gap: 0.35rem;
-    flex-wrap: nowrap;
-    overflow-x: auto;
-    padding-bottom: 0.1rem;
-  }
+  position: relative;
+  justify-content: center;
+  gap: 0.35rem;
+  flex-wrap: nowrap;
+  overflow: visible;
+  padding-bottom: 0.1rem;
+}
 
   .notes-tool-strip {
     flex-wrap: nowrap;
@@ -942,7 +943,7 @@ main { min-height: calc(100vh - 170px); }
   }
 
   .agenda-page-shell .agenda-week-body {
-    min-width: 760px;
+    min-width: 1100px;
   }
 
   .agenda-page-shell .agenda-event-card {
@@ -2654,5 +2655,119 @@ textarea.form-control::placeholder {
 @media (max-width: 560px) {
   .agenda-month-body {
     grid-template-columns: repeat(1, minmax(0, 1fr));
+  }
+}
+
+.documents-course-accordion .accordion-item{
+  border:none;
+  border-radius:18px;
+  overflow:hidden;
+  margin-bottom:16px;
+  box-shadow:0 6px 18px rgba(0,0,0,.08);
+}
+
+.documents-course-accordion .accordion-button{
+  background:#ffffff;
+  font-weight:700;
+  font-size:1rem;
+  padding:1rem 1.2rem;
+}
+
+.documents-course-accordion .accordion-button:not(.collapsed){
+  background:#eef5ff;
+  color:#0d6efd;
+}
+
+.documents-course-accordion .accordion-button:focus{
+  box-shadow:none;
+}
+
+.documents-course-accordion .accordion-body{
+  background:#fafafa;
+}
+
+/* ========================================
+   NOTIFICATIONS RESPONSIVE
+   Téléphone + tablette
+   ======================================== */
+
+.navigation-shell .notifications-panel {
+  width: 360px;
+  max-width: calc(100vw - 2rem);
+  right: 0;
+  left: auto;
+}
+
+/* Tablette */
+@media (min-width: 576px) and (max-width: 1366px) {
+  .navigation-shell .notifications-panel {
+    width: 400px;
+    max-width: calc(100vw - 2rem);
+  }
+}
+
+/* Téléphone */
+@media (max-width: 575.98px) {
+  .navigation-shell .notifications-panel {
+    position: fixed !important;
+    top: 72px;
+    left: 12px !important;
+    right: 12px !important;
+
+    width: auto !important;
+    max-width: none !important;
+
+    margin-top: 0 !important;
+
+    max-height: calc(100dvh - 88px) !important;
+    overflow-y: auto;
+    overflow-x: hidden;
+
+    border-radius: 16px;
+  }
+
+  .navigation-shell .notifications-panel .card-body {
+    padding: 1rem;
+  }
+
+  .navigation-shell .notifications-panel .alert {
+    width: 100%;
+    margin: 0;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+}
+/* Notifications - tablette paysage */
+@media (min-width: 992px) and (max-width: 1366px) {
+  .navigation-shell .notifications-panel {
+    position: fixed !important;
+
+    top: 72px !important;
+    left: auto !important;
+    right: 16px !important;
+
+    width: 520px !important;
+    max-width: calc(100vw - 32px) !important;
+
+    margin-top: 0 !important;
+
+    max-height: calc(100dvh - 88px);
+    overflow-y: auto;
+    overflow-x: hidden;
+
+    border-radius: 16px;
+  }
+
+  .navigation-shell .notifications-panel .card-body {
+    width: 100%;
+    padding: 1.25rem;
+  }
+
+  .navigation-shell .notifications-panel .alert {
+    width: 100%;
+    margin-left: 0;
+    margin-right: 0;
+    white-space: normal;
+    overflow-wrap: anywhere;
   }
 }

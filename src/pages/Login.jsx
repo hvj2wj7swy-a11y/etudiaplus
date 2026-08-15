@@ -64,16 +64,23 @@ export default function Login() {
                 </Form.Group>
 
                 <Form.Group className="mb-4">
-                  <Form.Label>Mot de passe</Form.Label>
-                  <Form.Control
-                    required
-                    type="password"
-                    name="password"
-                    value={form.password}
-                    onChange={handleChange}
-                    placeholder="••••••••"
-                  />
-                </Form.Group>
+  <Form.Label>Mot de passe</Form.Label>
+
+  <Form.Control
+    required
+    type="password"
+    name="password"
+    value={form.password}
+    onChange={handleChange}
+    placeholder="••••••••"
+  />
+
+  <div className="text-end mt-2">
+    <Link to="/forgot-password">
+      Mot de passe oublié ?
+    </Link>
+  </div>
+</Form.Group>
 
                 <Button type="submit" className="w-100" disabled={loading}>
                   {loading ? 'Connexion...' : 'Se connecter'}

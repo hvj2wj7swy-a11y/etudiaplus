@@ -1,41 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { Alert, Badge, Button, Card, Container, Nav, Navbar } from 'react-bootstrap'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext.jsx'
-
-const NOTIFICATIONS_KEY = 'edudia_notifications'
-const NOTIFICATION_EVENT = 'edudia-notifications-updated'
-
-const safeParse = (value, fallback) => {
-  try {
-    return value ? JSON.parse(value) : fallback
-  } catch {
-    return fallback
-  }
-}
-
-const normalizeNotification = (notification) => ({
-  id: notification.id,
-  userId: notification.userId,
-  title: notification.title,
-  message: notification.message,
-  type: notification.type || 'info',
-  isRead: Boolean(notification.isRead),
-  createdAt: notification.createdAt || new Date().toISOString()
-})
-
-const readNotifications = () => {
-  const stored = safeParse(window.localStorage.getItem(NOTIFICATIONS_KEY), [])
-  return Array.isArray(stored) ? stored.map(normalizeNotification) : []
-}
-
-const saveNotifications = (notifications) => {
-  window.localStorage.setItem(NOTIFICATIONS_KEY, JSON.stringify(notifications))
-}
-
-const dispatchNotificationUpdate = () => {
-  window.dispatchEvent(new Event(NOTIFICATION_EVENT))
-}
+import { notificationAPI } from '../services/api.js'
 
 const typeLabels = {
   forum: 'Forum',
@@ -64,6 +31,12 @@ const formatNotificationDate = (value) => {
 
 export default function Navigation() {
   const { user, logout } = useAuth()
+  const navigate = useNavigate()
+
+const token =
+  localStorage.getItem(
+    'edudia_auth_token'
+  )
   const [notifications, setNotifications] = useState([])
   const [showNotifications, setShowNotifications] = useState(false)
   const [installPrompt, setInstallPrompt] = useState(null)
@@ -72,24 +45,55 @@ export default function Navigation() {
   const panelRef = useRef(null)
   const hasActiveSubscription = user?.subscriptionStatus === 'active'
   const isAdmin = user?.role === 'admin'
+
   const canAccessPremiumFeatures = Boolean(hasActiveSubscription || isAdmin)
   const isIosDevice = typeof navigator !== 'undefined' && /iphone|ipad|ipod/i.test(navigator.userAgent)
 
-  const refreshNotifications = () => {
-    if (!user?.id) {
-      setNotifications([])
-      return
-    }
-
-    const stored = readNotifications().filter((notification) => notification.userId === user.id)
-    stored.sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime())
-    setNotifications(stored)
+  const refreshNotifications = async () => {
+  if (!user?.id || !token) {
+    setNotifications([])
+    return
   }
 
+  try {
+    const response =
+      await notificationAPI.list(token)
+
+    const rawNotifications =
+      response?.data?.notifications || []
+
+    const normalizedNotifications =
+      rawNotifications.map((notification) => ({
+        id: notification.id,
+        userId: notification.user_id,
+        type: notification.type || 'info',
+        title: notification.title,
+        message: notification.message,
+        link: notification.link || null,
+        metadata: notification.metadata || null,
+        isRead: Boolean(notification.is_read),
+        createdAt: notification.created_at,
+        readAt: notification.read_at
+      }))
+
+    setNotifications(normalizedNotifications)
+  } catch (error) {
+    console.error(
+      'Erreur chargement notifications:',
+      error
+    )
+  }
+}
+
   useEffect(() => {
-    refreshNotifications()
-    setShowNotifications(false)
-  }, [user?.id])
+  if (!user?.id || !token) {
+    setNotifications([])
+    return
+  }
+
+  refreshNotifications()
+  setShowNotifications(false)
+}, [user?.id, token])
 
   useEffect(() => {
     const standalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true
@@ -121,21 +125,6 @@ export default function Navigation() {
   }, [])
 
   useEffect(() => {
-    const handleUpdate = () => refreshNotifications()
-    const handleStorage = (event) => {
-      if (event.key === NOTIFICATIONS_KEY) refreshNotifications()
-    }
-
-    window.addEventListener(NOTIFICATION_EVENT, handleUpdate)
-    window.addEventListener('storage', handleStorage)
-
-    return () => {
-      window.removeEventListener(NOTIFICATION_EVENT, handleUpdate)
-      window.removeEventListener('storage', handleStorage)
-    }
-  }, [user?.id])
-
-  useEffect(() => {
     const handleOutsideClick = (event) => {
       if (!panelRef.current) return
       if (!panelRef.current.contains(event.target)) {
@@ -152,26 +141,64 @@ export default function Navigation() {
     [notifications]
   )
 
-  const markAsRead = (notificationId) => {
-    const nextNotifications = readNotifications().map((notification) => {
-      if (notification.id !== notificationId) return notification
-      return { ...notification, isRead: true }
-    })
+  const markAsRead = async (notificationId) => {
+  try {
+    await notificationAPI.markAsRead(
+      token,
+      notificationId
+    )
 
-    saveNotifications(nextNotifications)
     refreshNotifications()
-    dispatchNotificationUpdate()
+  } catch (error) {
+    console.error(error)
   }
+}
 
-  const markAllAsRead = () => {
-    const nextNotifications = readNotifications().map((notification) => (
-      notification.userId === user?.id ? { ...notification, isRead: true } : notification
-    ))
+  const markAllAsRead = async () => {
+  try {
+    await notificationAPI.markAllAsRead(token)
 
-    saveNotifications(nextNotifications)
     refreshNotifications()
-    dispatchNotificationUpdate()
+  } catch (error) {
+    console.error(error)
   }
+}
+
+const handleNotificationClick = async (notification) => {
+  try {
+    if (!notification.isRead) {
+      await notificationAPI.markAsRead(
+        token,
+        notification.id
+      )
+    }
+
+    await refreshNotifications()
+
+    setShowNotifications(false)
+
+    if (notification.link) {
+      navigate(notification.link)
+    }
+  } catch (error) {
+    console.error(
+      'Erreur ouverture notification:',
+      error
+    )
+  }
+}
+
+const createTestNotification = async () => {
+  try {
+    await notificationAPI.createTest(token)
+    await refreshNotifications()
+  } catch (error) {
+    console.error(
+      'Erreur notification test:',
+      error
+    )
+  }
+}
 
   const handleInstallClick = async () => {
     if (!installPrompt) return
@@ -226,7 +253,14 @@ export default function Navigation() {
             </Button>
 
             {showNotifications && (
-              <Card className="notifications-panel position-absolute end-0 mt-2 shadow" style={{ zIndex: 1060 }}>
+              <Card
+  className="notifications-panel position-absolute end-0 mt-2 shadow"
+  style={{
+    zIndex: 1060,
+    maxHeight: '70vh',
+    overflowY: 'auto'
+  }}
+>
                 <Card.Body className="p-3">
                   <div className="d-flex justify-content-between align-items-center gap-2 mb-3">
                     <div className="fw-semibold">Notifications</div>
@@ -243,9 +277,24 @@ export default function Navigation() {
                     <div className="d-grid gap-2">
                       {notifications.map((notification) => (
                         <div
-                          key={notification.id}
-                          className={`border rounded p-2 ${notification.isRead ? 'bg-light' : 'bg-white'}`}
-                        >
+  key={notification.id}
+  className={`border rounded p-2 ${
+    notification.isRead ? 'bg-light' : 'bg-white'
+  }`}
+  role="button"
+  tabIndex={0}
+  onClick={() =>
+    handleNotificationClick(notification)
+  }
+  onKeyDown={(event) => {
+    if (
+      event.key === 'Enter' ||
+      event.key === ' '
+    ) {
+      handleNotificationClick(notification)
+    }
+  }}
+>
                           <div className="d-flex justify-content-between align-items-start gap-2">
                             <Badge bg={typeVariants[notification.type] || 'secondary'}>
                               {typeLabels[notification.type] || notification.type}
@@ -256,9 +305,16 @@ export default function Navigation() {
                           <div className="small text-muted">{notification.message}</div>
                           <div className="d-flex justify-content-end mt-2">
                             {!notification.isRead && (
-                              <Button size="sm" variant="outline-primary" onClick={() => markAsRead(notification.id)}>
-                                Marquer comme lu
-                              </Button>
+                              <Button
+  size="sm"
+  variant="outline-primary"
+  onClick={(event) => {
+    event.stopPropagation()
+    markAsRead(notification.id)
+  }}
+>
+  Marquer comme lu
+</Button>
                             )}
                           </div>
                         </div>
@@ -279,9 +335,10 @@ export default function Navigation() {
             {canAccessPremiumFeatures && (
               <>
                 <Nav.Link as={Link} to="/documents">Documents</Nav.Link>
-                <Nav.Link as={Link} to="/favoris">Favoris</Nav.Link>
-                <Nav.Link as={Link} to="/forum">Forum</Nav.Link>
-                <Nav.Link as={Link} to="/agenda">Agenda</Nav.Link>
+<Nav.Link as={Link} to="/favoris">Favoris</Nav.Link>
+<Nav.Link as={Link} to="/forum">Forum</Nav.Link>
+<Nav.Link as={Link} to="/travaux">Travaux</Nav.Link>
+<Nav.Link as={Link} to="/agenda">Agenda</Nav.Link>
               </>
             )}
             {isAdmin && <Nav.Link as={Link} to="/admin">Admin</Nav.Link>}

@@ -164,16 +164,16 @@ const createSampleNotebook = (courseName = 'Mathématiques') => {
   }
 }
 
-const ensureSeedData = (userId, fallbackCourse = 'General') => {
+const ensureSeedData = (userId) => {
   const key = getStorageKey(userId)
   const current = safeParse(window.localStorage.getItem(key), null)
-  if (Array.isArray(current) && current.length > 0) {
+
+  if (Array.isArray(current)) {
     return current
   }
 
-  const seeded = [createSampleNotebook(fallbackCourse)]
-  window.localStorage.setItem(key, JSON.stringify(seeded))
-  return seeded
+  window.localStorage.setItem(key, JSON.stringify([]))
+  return []
 }
 
 const readNotebooks = (userId, fallbackCourse) => {

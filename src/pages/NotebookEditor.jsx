@@ -56,7 +56,49 @@ const clamp = (value, min, max) => Math.min(max, Math.max(min, value))
 
 const buildStrokePath = (points = []) => {
   if (!points.length) return ''
-  return points.map((point, index) => `${index === 0 ? 'M' : 'L'} ${point.x} ${point.y}`).join(' ')
+
+  if (points.length === 1) {
+    return `M ${points[0].x} ${points[0].y}`
+  }
+
+  let path = `M ${points[0].x} ${points[0].y}`
+
+  for (let index = 1; index < points.length - 1; index += 1) {
+    const current = points[index]
+    const next = points[index + 1]
+
+    const midX = (current.x + next.x) / 2
+    const midY = (current.y + next.y) / 2
+
+    path += ` Q ${current.x} ${current.y} ${midX} ${midY}`
+  }
+
+  const last = points[points.length - 1]
+
+  path += ` L ${last.x} ${last.y}`
+
+  return path
+}
+
+const buildPressureSegments = (points = [], baseWidth = 4) => {
+  if (points.length < 2) return []
+
+  return points.slice(1).map((point, index) => {
+    const previous = points[index]
+
+    const pressure =
+      ((previous.pressure ?? 0.5) + (point.pressure ?? 0.5)) / 2
+
+    const pressureScale = 0.55 + pressure * 0.9
+
+    return {
+      x1: previous.x,
+      y1: previous.y,
+      x2: point.x,
+      y2: point.y,
+      width: baseWidth * pressureScale
+    }
+  })
 }
 
 const normalizeShapeBounds = (shape) => {
@@ -164,6 +206,34 @@ const pointInBounds = (point, bounds) => {
   return point.x >= bounds.x && point.x <= bounds.x + bounds.width && point.y >= bounds.y && point.y <= bounds.y + bounds.height
 }
 
+const distancePointToSegment = (point, start, end) => {
+  const dx = end.x - start.x
+  const dy = end.y - start.y
+
+  if (dx === 0 && dy === 0) {
+    return Math.hypot(
+      point.x - start.x,
+      point.y - start.y
+    )
+  }
+
+  const t = clamp(
+    ((point.x - start.x) * dx +
+      (point.y - start.y) * dy) /
+      (dx * dx + dy * dy),
+    0,
+    1
+  )
+
+  const nearestX = start.x + t * dx
+  const nearestY = start.y + t * dy
+
+  return Math.hypot(
+    point.x - nearestX,
+    point.y - nearestY
+  )
+}
+
 const getBoundsCenter = (bounds) => ({
   x: bounds.x + bounds.width / 2,
   y: bounds.y + bounds.height / 2
@@ -238,8 +308,17 @@ export default function NotebookEditor() {
   const [selectedPageId, setSelectedPageId] = useState(null)
   const [activeTool, setActiveTool] = useState('pen')
   const [color, setColor] = useState('#0d6efd')
+  const [penColor, setPenColor] = useState('#0d6efd')
+const [highlighterColor, setHighlighterColor] = useState('#facc15')
+const [textColor, setTextColor] = useState('#111827')
+const [shapeColor, setShapeColor] = useState('#0d6efd')
   const [shapeFillColor, setShapeFillColor] = useState('#dbeafe')
   const [strokeWidth, setStrokeWidth] = useState(4)
+  const [penWidth, setPenWidth] = useState(4)
+const [highlighterWidth, setHighlighterWidth] = useState(28)
+const [eraserMode, setEraserMode] = useState('object')
+const [eraserSize, setEraserSize] = useState(24)
+const [eraserCursor, setEraserCursor] = useState(null)
   const [zoom, setZoom] = useState(1)
   const [draftElement, setDraftElement] = useState(null)
   const [selectedElementId, setSelectedElementId] = useState(null)
@@ -281,6 +360,9 @@ const [textLineHeight, setTextLineHeight] = useState(1.4)
   const clipboardRef = useRef(null)
   const autosaveTimerRef = useRef(null)
   const pointerModeRef = useRef(null)
+  const activePointersRef = useRef(new Map())
+const pinchStartDistanceRef = useRef(null)
+const pinchStartZoomRef = useRef(1)
   const fallbackCourse = user?.programme || 'General'
   const token = window.localStorage.getItem('edudia_auth_token')
 
@@ -563,7 +645,7 @@ fontStyle: nextFontStyle,
 textDecoration: nextTextDecoration,
 opacity: nextOpacity,
 lineHeight: nextLineHeight,
-color: source.color || color,
+color: source.color || textColor,
 align: nextAlign,
 maxWidth: nextMaxWidth,
       width: nextMaxWidth,
@@ -572,13 +654,84 @@ maxWidth: nextMaxWidth,
   }
 
   const eraseAtPoint = (point) => {
-    updateCurrentPage((page) => {
+  updateCurrentPage((page) => {
+    if (eraserMode === 'object') {
       const reversed = [...page.elements].reverse()
-      const match = reversed.find((element) => pointInBounds(point, getElementBounds(element)))
+
+      const match = reversed.find((element) =>
+        pointInBounds(point, getElementBounds(element))
+      )
+
       if (!match) return
-      page.elements = page.elements.filter((element) => element.id !== match.id)
-    })
-  }
+
+      page.elements = page.elements.filter(
+        (element) => element.id !== match.id
+      )
+
+      return
+    }
+
+    if (eraserMode === 'pixel') {
+      const radius = eraserSize / 2
+
+      page.elements = page.elements.flatMap((element) => {
+        if (
+          element.type !== 'stroke' ||
+          !Array.isArray(element.points) ||
+          element.points.length < 2
+        ) {
+          return [element]
+        }
+
+        const keptSegments = []
+        let currentSegment = [element.points[0]]
+
+        for (
+          let index = 1;
+          index < element.points.length;
+          index += 1
+        ) {
+          const previous = element.points[index - 1]
+          const current = element.points[index]
+
+          const distance = distancePointToSegment(
+            point,
+            previous,
+            current
+          )
+
+          if (distance <= radius) {
+            if (currentSegment.length > 1) {
+              keptSegments.push(currentSegment)
+            }
+
+            currentSegment = []
+          } else {
+            if (currentSegment.length === 0) {
+              currentSegment = [current]
+            } else {
+              currentSegment.push(current)
+            }
+          }
+        }
+
+        if (currentSegment.length > 1) {
+          keptSegments.push(currentSegment)
+        }
+
+        if (keptSegments.length === 0) {
+          return []
+        }
+
+        return keptSegments.map((points, index) => ({
+          ...element,
+          id: `${element.id}_erase_${Date.now()}_${index}`,
+          points
+        }))
+      })
+    }
+  })
+}
 
 const moveElementBy = (element, deltaX, deltaY) => {
   if (element.type === 'stroke') {
@@ -1007,11 +1160,47 @@ const handleRotatePointerDown = (event) => {
   )
 }
 
+const getPointerDistance = () => {
+  const pointers = Array.from(activePointersRef.current.values())
+
+  if (pointers.length < 2) {
+    return null
+  }
+
+  const [first, second] = pointers
+
+  return Math.hypot(
+    second.x - first.x,
+    second.y - first.y
+  )
+}
+
   const handlePointerDown = (event) => {
   if (!currentPage || editingText) return
 
-  const point = getSurfacePoint(event)
-  
+const point = getSurfacePoint(event)
+
+  if (event.pointerType === 'touch') {
+  activePointersRef.current.set(event.pointerId, {
+    x: event.clientX,
+    y: event.clientY
+  })
+
+  surfaceRef.current?.setPointerCapture?.(event.pointerId)
+
+  if (activePointersRef.current.size === 2) {
+    const distance = getPointerDistance()
+
+    if (distance) {
+      pinchStartDistanceRef.current = distance
+      pinchStartZoomRef.current = zoom
+      pointerModeRef.current = 'pinch'
+    }
+  }
+
+  return
+}
+
   if (
   activeTool === 'select' &&
   event.target?.dataset?.resizeHandle === 'true' &&
@@ -1137,11 +1326,25 @@ const handleRotatePointerDown = (event) => {
         id: `draft_stroke_${Date.now()}`,
         type: 'stroke',
         tool: activeTool,
-        color,
-        width: strokeWidth,
+        color:
+  activeTool === 'highlighter'
+    ? highlighterColor
+    : penColor,
+       width:
+  activeTool === 'highlighter'
+    ? highlighterWidth
+    : penWidth,
         opacity: activeTool === 'highlighter' ? 0.35 : 1,
         pointerType: event.pointerType,
-        points: [point]
+        points: [
+  {
+    ...point,
+    pressure:
+      event.pointerType === 'pen'
+        ? event.pressure || 0.5
+        : 0.5
+  }
+]
       })
       return
     }
@@ -1153,7 +1356,7 @@ const handleRotatePointerDown = (event) => {
   createShapeDraft(
     activeTool,
     point,
-    color,
+    shapeColor,
     strokeWidth,
     shapeFillColor
   )
@@ -1163,6 +1366,46 @@ const handleRotatePointerDown = (event) => {
 
   const handlePointerMove = (event) => {
     const point = getSurfacePoint(event)
+
+    if (
+  activeTool === 'eraser' &&
+  eraserMode === 'pixel'
+) {
+  setEraserCursor(point)
+} else {
+  setEraserCursor(null)
+}
+
+    if (event.pointerType === 'touch') {
+  if (activePointersRef.current.has(event.pointerId)) {
+    activePointersRef.current.set(event.pointerId, {
+      x: event.clientX,
+      y: event.clientY
+    })
+  }
+
+  if (
+    pointerModeRef.current === 'pinch' &&
+    activePointersRef.current.size >= 2
+  ) {
+    const currentDistance = getPointerDistance()
+    const startDistance = pinchStartDistanceRef.current
+
+    if (currentDistance && startDistance) {
+      const scale = currentDistance / startDistance
+
+      setZoom(
+        clamp(
+          pinchStartZoomRef.current * scale,
+          0.6,
+          2.5
+        )
+      )
+    }
+
+    return
+  }
+}
 
     if (
   pointerModeRef.current === 'rotate' &&
@@ -1344,8 +1587,19 @@ setNotebook((previous) => {
     setDraftElement((previous) => {
       if (!previous) return previous
       if (previous.type === 'stroke') {
-        return { ...previous, points: [...previous.points, point] }
-      }
+  const nextPoint = {
+    ...point,
+    pressure:
+      event.pointerType === 'pen'
+        ? event.pressure || 0.5
+        : 0.5
+  }
+
+  return {
+    ...previous,
+    points: [...previous.points, nextPoint]
+  }
+}
 
       if (previous.type === 'shape') {
   if (
@@ -1397,7 +1651,20 @@ return previous
 })
   }
 
-  const handlePointerUp = () => {
+  const handlePointerUp = (event) => {
+    if (event?.pointerType === 'touch') {
+  activePointersRef.current.delete(event.pointerId)
+
+  if (activePointersRef.current.size < 2) {
+    pinchStartDistanceRef.current = null
+
+    if (pointerModeRef.current === 'pinch') {
+      pointerModeRef.current = null
+      return
+    }
+  }
+}
+
     if (pointerModeRef.current === 'selection-box') {
   const box = selectionBox
 
@@ -1529,7 +1796,7 @@ return previous
     1.4
   ),
 
-  color: editingText.color || color,
+  color: editingText.color || textColor,
   align: editingText.align || textAlign || 'left',
 
   maxWidth: Number(
@@ -2745,7 +3012,14 @@ setSelectedElementIds([])
 
         {showToolPanel && (
           <div className="notes-tool-panel" ref={toolPanelRef}>
-            {(activeTool === 'pen' || activeTool === 'highlighter' || activeTool.startsWith('shape-') || activeTool === 'text' || Boolean(editingText)) && (
+            {(
+  activeTool === 'pen' ||
+  activeTool === 'highlighter' ||
+  activeTool === 'eraser' ||
+  activeTool.startsWith('shape-') ||
+  activeTool === 'text' ||
+  Boolean(editingText)
+) && (
               <>
                 <div className="notes-tool-panel__section">
                   <div className="notes-tool-panel__label">Couleur</div>
@@ -2756,10 +3030,21 @@ setSelectedElementIds([])
                         type="button"
                         className={`notes-color-dot ${color === preset ? 'is-active' : ''}`}
                         style={{ '--dot-color': preset }}
-                        onClick={() => {
-                          setColor(preset)
-                          setEditingText((current) => (current ? { ...current, color: preset } : current))
-                        }}
+                       onClick={() => {
+  if (activeTool === 'pen') {
+    setPenColor(preset)
+  } else if (activeTool === 'highlighter') {
+    setHighlighterColor(preset)
+  } else if (activeTool.startsWith('shape-')) {
+    setShapeColor(preset)
+  } else if (activeTool === 'text' || editingText) {
+    setTextColor(preset)
+    setEditingText((current) =>
+      current ? { ...current, color: preset } : current
+    )
+  }
+}}
+                        
                         title={`Couleur ${preset}`}
                         aria-label={`Couleur ${preset}`}
                       />
@@ -2768,23 +3053,143 @@ setSelectedElementIds([])
                       +
                       <input
                         type="color"
-                        value={color}
-                        onChange={(event) => {
-                          const nextColor = event.target.value
-                          setColor(nextColor)
-                          setEditingText((current) => (current ? { ...current, color: nextColor } : current))
-                        }}
+                        value={
+  activeTool === 'pen'
+    ? penColor
+    : activeTool === 'highlighter'
+      ? highlighterColor
+      : activeTool.startsWith('shape-')
+        ? shapeColor
+        : textColor
+}
+onChange={(event) => {
+  const nextColor = event.target.value
+
+  if (activeTool === 'pen') {
+    setPenColor(nextColor)
+  } else if (activeTool === 'highlighter') {
+    setHighlighterColor(nextColor)
+  } else if (activeTool.startsWith('shape-')) {
+    setShapeColor(nextColor)
+  } else if (activeTool === 'text' || editingText) {
+    setTextColor(nextColor)
+    setEditingText((current) =>
+      current ? { ...current, color: nextColor } : current
+    )
+  }
+}}
                       />
                     </label>
                   </div>
                 </div>
 
-                {(activeTool === 'pen' || activeTool === 'highlighter' || activeTool.startsWith('shape-')) && (
-                  <div className="notes-tool-panel__section">
-                    <div className="notes-tool-panel__label">Epaisseur <span>{strokeWidth}px</span></div>
-                    <Form.Range className="notes-compact-range" min={2} max={20} value={strokeWidth} onChange={(event) => setStrokeWidth(Number(event.target.value))} />
-                  </div>
-                )}
+                {activeTool === 'pen' && (
+  <div className="notes-tool-panel__section">
+    <div className="notes-tool-panel__label">
+      Épaisseur du stylo <span>{penWidth}px</span>
+    </div>
+
+    <Form.Range
+      className="notes-compact-range"
+      min={1}
+      max={16}
+      step={1}
+      value={penWidth}
+      onChange={(event) =>
+        setPenWidth(Number(event.target.value))
+      }
+    />
+  </div>
+)}
+
+{activeTool === 'highlighter' && (
+  <div className="notes-tool-panel__section">
+    <div className="notes-tool-panel__label">
+      Épaisseur du surligneur <span>{highlighterWidth}px</span>
+    </div>
+
+    <Form.Range
+      className="notes-compact-range"
+      min={8}
+      max={70}
+      step={1}
+      value={highlighterWidth}
+      onChange={(event) =>
+        setHighlighterWidth(Number(event.target.value))
+      }
+    />
+  </div>
+)}
+
+{activeTool === 'eraser' && (
+  <div className="notes-tool-panel__section">
+    <div className="notes-tool-panel__label">
+      Mode de gomme
+    </div>
+
+    <ButtonGroup className="w-100 mb-3">
+      <Button
+        variant={
+          eraserMode === 'object'
+            ? 'primary'
+            : 'outline-primary'
+        }
+        onClick={() => setEraserMode('object')}
+      >
+        Objet
+      </Button>
+
+      <Button
+        variant={
+          eraserMode === 'pixel'
+            ? 'primary'
+            : 'outline-primary'
+        }
+        onClick={() => setEraserMode('pixel')}
+      >
+        Précise
+      </Button>
+    </ButtonGroup>
+
+    {eraserMode === 'pixel' && (
+      <>
+        <div className="notes-tool-panel__label">
+          Taille <span>{eraserSize}px</span>
+        </div>
+
+        <Form.Range
+          className="notes-compact-range"
+          min={8}
+          max={80}
+          step={2}
+          value={eraserSize}
+          onChange={(event) =>
+            setEraserSize(Number(event.target.value))
+          }
+        />
+      </>
+    )}
+  </div>
+)}
+
+{activeTool.startsWith('shape-') && (
+  <div className="notes-tool-panel__section">
+    <div className="notes-tool-panel__label">
+      Épaisseur de la forme <span>{strokeWidth}px</span>
+    </div>
+
+    <Form.Range
+      className="notes-compact-range"
+      min={2}
+      max={20}
+      step={1}
+      value={strokeWidth}
+      onChange={(event) =>
+        setStrokeWidth(Number(event.target.value))
+      }
+    />
+  </div>
+)}
                 
 {activeTool.startsWith('shape-') &&
   activeTool !== 'shape-line' &&
@@ -3109,20 +3514,48 @@ step={1}
                 <svg className="notes-editor-surface__svg" viewBox={`0 0 ${PAPER_WIDTH} ${PAPER_HEIGHT}`} aria-hidden="true">
                   {currentPage.elements.map((element) => {
                     if (element.type === 'stroke') {
-                      return (
-                        <path
-                          key={element.id}
-                          transform={getElementRotationTransform(element)}
-                          d={buildStrokePath(element.points)}
-                          fill="none"
-                          stroke={element.color}
-                          strokeWidth={element.width}
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          opacity={element.opacity ?? 1}
-                        />
-                      )
-                    }
+  if (element.tool === 'pen') {
+    const segments = buildPressureSegments(
+      element.points,
+      element.width
+    )
+
+    return (
+      <g
+        key={element.id}
+        transform={getElementRotationTransform(element)}
+        opacity={element.opacity ?? 1}
+      >
+        {segments.map((segment, index) => (
+          <line
+            key={`${element.id}_${index}`}
+            x1={segment.x1}
+            y1={segment.y1}
+            x2={segment.x2}
+            y2={segment.y2}
+            stroke={element.color}
+            strokeWidth={segment.width}
+            strokeLinecap="round"
+          />
+        ))}
+      </g>
+    )
+  }
+
+  return (
+    <path
+      key={element.id}
+      transform={getElementRotationTransform(element)}
+      d={buildStrokePath(element.points)}
+      fill="none"
+      stroke={element.color}
+      strokeWidth={element.width}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      opacity={element.opacity ?? 1}
+    />
+  )
+}
 
                     if (element.type === 'shape') {
                       if (element.shape === 'ellipse') {
@@ -3323,16 +3756,36 @@ if (element.shape === 'arrow') {
                   })}
 
                   {draftElement?.type === 'stroke' && (
-                    <path
-                      d={buildStrokePath(draftElement.points)}
-                      fill="none"
-                      stroke={draftElement.color}
-                      strokeWidth={draftElement.width}
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      opacity={draftElement.opacity ?? 1}
-                    />
-                  )}
+  draftElement.tool === 'pen' ? (
+    <g opacity={draftElement.opacity ?? 1}>
+      {buildPressureSegments(
+        draftElement.points,
+        draftElement.width
+      ).map((segment, index) => (
+        <line
+          key={`draft_${index}`}
+          x1={segment.x1}
+          y1={segment.y1}
+          x2={segment.x2}
+          y2={segment.y2}
+          stroke={draftElement.color}
+          strokeWidth={segment.width}
+          strokeLinecap="round"
+        />
+      ))}
+    </g>
+  ) : (
+    <path
+      d={buildStrokePath(draftElement.points)}
+      fill="none"
+      stroke={draftElement.color}
+      strokeWidth={draftElement.width}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      opacity={draftElement.opacity ?? 1}
+    />
+  )
+)}
 
                   {draftElement?.type === 'shape' && draftElement.shape === 'line' && (
                     <line
@@ -3599,6 +4052,21 @@ if (element.shape === 'arrow') {
   </>
 )}
 
+{activeTool === 'eraser' &&
+  eraserMode === 'pixel' &&
+  eraserCursor && (
+    <circle
+      cx={eraserCursor.x}
+      cy={eraserCursor.y}
+      r={eraserSize}
+      fill="rgba(255,255,255,0.25)"
+      stroke="#6b7280"
+      strokeWidth="2"
+      strokeDasharray="6 4"
+      pointerEvents="none"
+    />
+  )}
+
                 </svg>
 
                  {currentPage.elements
@@ -3647,7 +4115,7 @@ fontSize: `${editingText.fontSize || 20}px`,
 fontFamily: editingText.fontFamily || DEFAULT_TEXT_FONT,
 fontWeight: editingText.fontWeight || 'normal',
 fontStyle: editingText.fontStyle || 'normal',
-textDecoration: editingText.textDecoration || 'no ne',
+textDecoration: editingText.textDecoration || 'none',
 opacity: editingText.opacity ?? 1,
 lineHeight: editingText.lineHeight || 1.4,
 textAlign: editingText.align || 'left',

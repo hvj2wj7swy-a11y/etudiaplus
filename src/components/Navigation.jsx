@@ -332,6 +332,7 @@ const createTestNotification = async () => {
             <Nav.Link as={Link} to="/">Accueil</Nav.Link>
             {user && <Nav.Link as={Link} to="/profile">Profil</Nav.Link>}
             {user && <Nav.Link as={Link} to="/notes">Notes</Nav.Link>}
+            {user && <Nav.Link as={Link} to="/flashcards">Flashcards</Nav.Link>}
             {canAccessPremiumFeatures && (
               <>
                 <Nav.Link as={Link} to="/documents">Documents</Nav.Link>

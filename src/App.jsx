@@ -26,6 +26,7 @@ import { RequireAuth, RequireActiveSubscription, RequireAdmin } from './componen
 import { AuthProvider } from './context/AuthContext.jsx'
 import ForgotPassword from './pages/ForgotPassword.jsx'
 import ResetPassword from './pages/ResetPassword.jsx'
+import FlashcardDeck from './pages/FlashcardDeck.jsx'
 
 export default function App() {
   return (
@@ -60,6 +61,7 @@ export default function App() {
             <Route path="/dashboard" element={<Navigate to="/tools" replace />} />
             <Route path="/notes" element={<Notes />} />
             <Route path="/flashcards" element={<Flashcards />} />
+            <Route path="/flashcards/:id" element={<FlashcardDeck />} />
             <Route path="/notes/:notebookId" element={<NotebookEditor />} />
             <Route path="/documents" element={<Documents />} />
             <Route path="/favoris" element={<Favorites />} />

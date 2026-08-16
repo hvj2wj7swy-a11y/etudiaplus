@@ -1,9 +1,11 @@
 import React, { useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { Button, Card, Container, Form, Modal } from 'react-bootstrap'
 import { flashcardAPI } from '../services/api.js'
 import './Flashcards.css'
 
 export default function Flashcards() {
+  const navigate = useNavigate()
   const [decks, setDecks] = useState([])
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [title, setTitle] = useState('')
@@ -121,7 +123,15 @@ export default function Flashcards() {
               className="col-12 col-md-6 col-lg-4"
               key={deck.id}
             >
-              <Card className="h-100">
+              <Card
+  className="h-100 flashcard-deck-card"
+  onClick={() => {
+    console.log("Clic paquet :", deck.id)
+    navigate(`/flashcards/${deck.id}`)
+  }}
+  style={{ cursor: 'pointer' }}
+>
+
                 <Card.Body>
                   <h5>{deck.title}</h5>
 

@@ -90,15 +90,24 @@ setDeck(response?.data?.deck)
   onClick={() => navigate('/flashcards')}
 >
   ← Retour aux paquets
-</Button>
-      <h1>{deck.title}</h1>
-      <Button
-  variant="primary"
-  className="mb-3"
-  onClick={() => setShowModal(true)}
->
-  + Ajouter une carte
-</Button>
+  </Button>
+<div className="d-flex gap-2 mb-3">
+  <Button
+    variant="primary"
+    onClick={() => setShowModal(true)}
+  >
+    + Ajouter une carte
+  </Button>
+
+  {deck.cards && deck.cards.length > 0 && (
+    <Button
+      variant="success"
+      onClick={() => navigate(`/flashcards/${id}/study`)}
+    >
+      ▶ Réviser
+    </Button>
+  )}
+</div>
 
 
       {deck.description && (

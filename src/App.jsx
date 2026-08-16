@@ -14,6 +14,7 @@ import PWADiagnostic from './pages/PWADiagnostic.jsx'
 import Forum from './pages/Forum.jsx'
 import Agenda from './pages/Agenda.jsx'
 import Travaux from './pages/Travaux.jsx'
+import CalculateurNotes from './pages/CalculateurNotes.jsx'
 import Dashboard from './pages/Dashboard.jsx'
 import Admin from './pages/Admin.jsx'
 import Notes from './pages/Notes.jsx'
@@ -63,6 +64,7 @@ export default function App() {
             <Route path="/forum" element={<Forum />} />
             <Route path="/agenda" element={<Agenda />} />
             <Route path="/travaux" element={<Travaux />} />
+            <Route path="/calculateur-notes" element={<CalculateurNotes />} />
           </Route>
 
           <Route path="*" element={<Navigate to="/" replace />} />

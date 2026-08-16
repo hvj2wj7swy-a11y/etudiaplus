@@ -338,6 +338,9 @@ const createTestNotification = async () => {
 <Nav.Link as={Link} to="/favoris">Favoris</Nav.Link>
 <Nav.Link as={Link} to="/forum">Forum</Nav.Link>
 <Nav.Link as={Link} to="/travaux">Travaux</Nav.Link>
+<Nav.Link as={Link} to="/calculateur-notes">
+  Calculateur
+</Nav.Link>
 <Nav.Link as={Link} to="/agenda">Agenda</Nav.Link>
               </>
             )}

@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { Button, Card, Container, ProgressBar } from 'react-bootstrap'
 import { flashcardAPI } from '../services/api.js'
+import './Flashcards.css'
 
 export default function FlashcardStudy() {
   const { id } = useParams()
@@ -148,7 +149,7 @@ export default function FlashcardStudy() {
         className="mb-4"
       />
 
-      <Card className="shadow-sm">
+      <Card className="shadow-sm flashcard-study-card">
         <Card.Body className="text-center p-4">
           <h5 className="text-muted mb-3">
             Question
@@ -171,7 +172,9 @@ export default function FlashcardStudy() {
                 Réponse
               </h5>
 
-              <h3>{currentCard.answer}</h3>
+              <h3 className="flashcard-study-answer">
+  {currentCard.answer}
+</h3>
 
               <div className="d-flex justify-content-center gap-3 flex-wrap mt-4">
                 <Button

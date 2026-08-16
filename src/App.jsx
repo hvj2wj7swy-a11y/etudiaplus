@@ -15,6 +15,7 @@ import Forum from './pages/Forum.jsx'
 import Agenda from './pages/Agenda.jsx'
 import Travaux from './pages/Travaux.jsx'
 import CalculateurNotes from './pages/CalculateurNotes.jsx'
+import Flashcards from './pages/Flashcards.jsx'
 import Dashboard from './pages/Dashboard.jsx'
 import Admin from './pages/Admin.jsx'
 import Notes from './pages/Notes.jsx'
@@ -58,6 +59,7 @@ export default function App() {
             <Route path="/tools" element={<Dashboard />} />
             <Route path="/dashboard" element={<Navigate to="/tools" replace />} />
             <Route path="/notes" element={<Notes />} />
+            <Route path="/flashcards" element={<Flashcards />} />
             <Route path="/notes/:notebookId" element={<NotebookEditor />} />
             <Route path="/documents" element={<Documents />} />
             <Route path="/favoris" element={<Favorites />} />

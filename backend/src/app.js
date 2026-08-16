@@ -83,6 +83,8 @@ app.use('/api/dashboard', require('./routes/dashboardRoutes'));
 // Routes des notes
 app.use('/api/notes', require('./routes/noteRoutes'));
 
+app.use('/api/flashcards', require('./routes/flashcardRoutes'));
+
 // Routes des abonnements
 app.use('/api/subscriptions', require('./routes/subscriptionRoutes'));
 

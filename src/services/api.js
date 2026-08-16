@@ -562,4 +562,84 @@ export const agendaAPI = {
   }
 }
 
+export const flashcardAPI = {
+  async getDecks(token) {
+    return request('/flashcards', {
+      method: 'GET',
+      headers: buildHeaders(token)
+    })
+  },
+
+  async createDeck(token, payload) {
+    return request('/flashcards', {
+      method: 'POST',
+      headers: buildHeaders(token, {
+        'Content-Type': 'application/json'
+      }),
+      body: JSON.stringify(payload)
+    })
+  },
+
+  async getDeck(token, deckId) {
+    return request(`/flashcards/${deckId}`, {
+      method: 'GET',
+      headers: buildHeaders(token)
+    })
+  },
+
+  async updateDeck(token, deckId, payload) {
+    return request(`/flashcards/${deckId}`, {
+      method: 'PUT',
+      headers: buildHeaders(token, {
+        'Content-Type': 'application/json'
+      }),
+      body: JSON.stringify(payload)
+    })
+  },
+
+  async deleteDeck(token, deckId) {
+    return request(`/flashcards/${deckId}`, {
+      method: 'DELETE',
+      headers: buildHeaders(token)
+    })
+  },
+
+  async createCard(token, deckId, payload) {
+    return request(`/flashcards/${deckId}/cards`, {
+      method: 'POST',
+      headers: buildHeaders(token, {
+        'Content-Type': 'application/json'
+      }),
+      body: JSON.stringify(payload)
+    })
+  },
+
+  async updateCard(token, deckId, cardId, payload) {
+    return request(`/flashcards/${deckId}/cards/${cardId}`, {
+      method: 'PUT',
+      headers: buildHeaders(token, {
+        'Content-Type': 'application/json'
+      }),
+      body: JSON.stringify(payload)
+    })
+  },
+
+  async deleteCard(token, deckId, cardId) {
+    return request(`/flashcards/${deckId}/cards/${cardId}`, {
+      method: 'DELETE',
+      headers: buildHeaders(token)
+    })
+  },
+
+  async reviewCard(token, deckId, cardId, known) {
+    return request(`/flashcards/${deckId}/cards/${cardId}/review`, {
+      method: 'PATCH',
+      headers: buildHeaders(token, {
+        'Content-Type': 'application/json'
+      }),
+      body: JSON.stringify({ known })
+    })
+  }
+}
+
 export { API_BASE_URL }

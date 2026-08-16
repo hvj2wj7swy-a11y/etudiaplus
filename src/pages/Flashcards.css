@@ -1,0 +1,48 @@
+.flashcards-page {
+  max-width: 1200px;
+}
+
+.flashcards-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 2rem;
+}
+
+.flashcards-header h1 {
+  margin-bottom: 0.25rem;
+  font-weight: 700;
+}
+
+.flashcards-empty {
+  display: flex;
+  justify-content: center;
+  padding: 4rem 1rem;
+}
+
+.flashcards-empty .card {
+  width: 100%;
+  max-width: 560px;
+  text-align: center;
+  border-radius: 1rem;
+}
+
+.flashcards-empty .card-body {
+  padding: 3rem 2rem;
+}
+
+@media (max-width: 767.98px) {
+  .flashcards-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .flashcards-header .btn {
+    width: 100%;
+  }
+
+  .flashcards-empty {
+    padding: 2rem 0;
+  }
+}

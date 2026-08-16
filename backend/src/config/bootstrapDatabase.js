@@ -414,6 +414,98 @@ await dbClient.query(`
   ON agenda_events(user_id, event_date)
 `);
 
+await dbClient.query(`
+  CREATE TABLE IF NOT EXISTS flashcard_decks (
+    id SERIAL PRIMARY KEY,
+
+    user_id INT NOT NULL
+      REFERENCES users(id)
+      ON DELETE CASCADE,
+
+    title VARCHAR(255) NOT NULL,
+
+    description TEXT,
+
+    created_at TIMESTAMP NOT NULL
+      DEFAULT CURRENT_TIMESTAMP,
+
+    updated_at TIMESTAMP NOT NULL
+      DEFAULT CURRENT_TIMESTAMP
+  )
+`);
+
+await dbClient.query(`
+  CREATE INDEX IF NOT EXISTS
+  idx_flashcard_decks_user_id
+  ON flashcard_decks(user_id)
+`);
+
+await dbClient.query(`
+  CREATE TABLE IF NOT EXISTS flashcards (
+    id SERIAL PRIMARY KEY,
+
+    deck_id INT NOT NULL
+      REFERENCES flashcard_decks(id)
+      ON DELETE CASCADE,
+
+    question TEXT NOT NULL,
+
+    answer TEXT NOT NULL,
+
+    created_at TIMESTAMP NOT NULL
+      DEFAULT CURRENT_TIMESTAMP,
+
+    updated_at TIMESTAMP NOT NULL
+      DEFAULT CURRENT_TIMESTAMP,
+
+    times_reviewed INT NOT NULL
+      DEFAULT 0,
+
+    times_known INT NOT NULL
+      DEFAULT 0,
+
+    times_unknown INT NOT NULL
+      DEFAULT 0,
+
+    last_reviewed_at TIMESTAMP
+  )
+`);
+
+await dbClient.query(`
+  ALTER TABLE flashcards
+  ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP
+  DEFAULT CURRENT_TIMESTAMP
+`);
+
+await dbClient.query(`
+  ALTER TABLE flashcards
+  ADD COLUMN IF NOT EXISTS times_reviewed INT
+  NOT NULL DEFAULT 0
+`);
+
+await dbClient.query(`
+  ALTER TABLE flashcards
+  ADD COLUMN IF NOT EXISTS times_known INT
+  NOT NULL DEFAULT 0
+`);
+
+await dbClient.query(`
+  ALTER TABLE flashcards
+  ADD COLUMN IF NOT EXISTS times_unknown INT
+  NOT NULL DEFAULT 0
+`);
+
+await dbClient.query(`
+  ALTER TABLE flashcards
+  ADD COLUMN IF NOT EXISTS last_reviewed_at TIMESTAMP
+`);
+
+await dbClient.query(`
+  CREATE INDEX IF NOT EXISTS
+  idx_flashcards_deck_id
+  ON flashcards(deck_id)
+`);
+
     console.log('✅ Schéma PostgreSQL prêt.');
   } finally {
     await dbClient.end();
